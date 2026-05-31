@@ -67,6 +67,13 @@ public sealed class JobOrchestratorTests
         var orchestrator = sp.GetRequiredService<JobOrchestrator>();
         await orchestrator.RunAsync(CancellationToken.None);
 
+        var mock = (LocalMockMusicProvider)sp.GetRequiredService<IMusicProvider>();
+        Assert.Empty(mock.PlaylistTracks);
+
+        var db = sp.GetRequiredService<SpotifyDbContext>();
+        Assert.Empty(await db.TrackHistories.ToListAsync());
+        Assert.Empty(await db.ProcessedAlbums.ToListAsync());
+
         var jobRunRepo = sp.GetRequiredService<IJobRunRepository>();
         var latest = await jobRunRepo.GetLatestAsync(CancellationToken.None);
         Assert.NotNull(latest);
@@ -86,16 +93,30 @@ public sealed class JobOrchestratorTests
         var orchestrator = sp.GetRequiredService<JobOrchestrator>();
         await orchestrator.RunAsync(CancellationToken.None);
 
+        var mock = (LocalMockMusicProvider)sp.GetRequiredService<IMusicProvider>();
+        Assert.Contains(mock.PlaylistTracks, t => t.Id == "track-a1");
+        Assert.Contains(mock.PlaylistTracks, t => t.Id == "track-a2");
+
+        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var history = await db.TrackHistories.ToListAsync();
+        Assert.Equal(2, history.Count);
+        Assert.Contains(history, h => h.SpotifyTrackId == "track-a1");
+        Assert.Contains(history, h => h.SpotifyTrackId == "track-a2");
+
+        var processed = await db.ProcessedAlbums.ToListAsync();
+        Assert.Single(processed);
+        Assert.Equal("album-a", processed[0].SpotifyAlbumId);
+
         var jobRunRepo = sp.GetRequiredService<IJobRunRepository>();
         var latest = await jobRunRepo.GetLatestAsync(CancellationToken.None);
         Assert.NotNull(latest);
         Assert.Equal("succeeded", latest.Status);
-        Assert.Equal(2, latest.TracksAdded); // track-a1 and track-a2
+        Assert.Equal(2, latest.TracksAdded);
         Assert.Equal(1, latest.NewAlbumsEncountered);
     }
 
     [Fact]
-    public async Task RunAsync_LikedTrackIsSkippedInStep2()
+    public async Task RunAsync_LikedTrackIsSkipped()
     {
         var albums = new List<Album>
         {
@@ -111,12 +132,26 @@ public sealed class JobOrchestratorTests
         var orchestrator = sp.GetRequiredService<JobOrchestrator>();
         await orchestrator.RunAsync(CancellationToken.None);
 
+        var mock = (LocalMockMusicProvider)sp.GetRequiredService<IMusicProvider>();
+        Assert.Single(mock.PlaylistTracks);
+        Assert.Contains(mock.PlaylistTracks, t => t.Id == "track-a2");
+        Assert.DoesNotContain(mock.PlaylistTracks, t => t.Id == "track-a1");
+
+        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var history = await db.TrackHistories.ToListAsync();
+        Assert.Single(history);
+        Assert.Equal("track-a2", history[0].SpotifyTrackId);
+
+        var processed = await db.ProcessedAlbums.ToListAsync();
+        Assert.Single(processed);
+        Assert.Equal("album-a", processed[0].SpotifyAlbumId);
+
         var jobRunRepo = sp.GetRequiredService<IJobRunRepository>();
         var latest = await jobRunRepo.GetLatestAsync(CancellationToken.None);
         Assert.NotNull(latest);
-        Assert.Equal(0, latest.TracksRemovedLiked); // no tracks were in the playlist to remove
-        Assert.Equal(1, latest.TracksAdded); // only track-a2 added
-        Assert.Equal(1, latest.TracksSkipped); // track-a1 was liked → skipped in Step 2
+        Assert.Equal(0, latest.TracksRemovedLiked);
+        Assert.Equal(1, latest.TracksAdded);
+        Assert.Equal(1, latest.TracksSkipped);
     }
 
     [Fact]
@@ -143,10 +178,18 @@ public sealed class JobOrchestratorTests
         var orchestrator = sp.GetRequiredService<JobOrchestrator>();
         await orchestrator.RunAsync(CancellationToken.None);
 
+        var mock = (LocalMockMusicProvider)sp.GetRequiredService<IMusicProvider>();
+        Assert.Empty(mock.PlaylistTracks);
+
+        Assert.Empty(await db.TrackHistories.ToListAsync());
+
+        var processed = await db.ProcessedAlbums.ToListAsync();
+        Assert.Single(processed);
+
         var jobRunRepo = sp.GetRequiredService<IJobRunRepository>();
         var latest = await jobRunRepo.GetLatestAsync(CancellationToken.None);
         Assert.NotNull(latest);
-        Assert.Equal(0, latest.TracksAdded); // album already processed → no new tracks
+        Assert.Equal(0, latest.TracksAdded);
         Assert.Equal(0, latest.NewAlbumsEncountered);
     }
 
@@ -175,11 +218,26 @@ public sealed class JobOrchestratorTests
         var orchestrator = sp.GetRequiredService<JobOrchestrator>();
         await orchestrator.RunAsync(CancellationToken.None);
 
+        var mock = (LocalMockMusicProvider)sp.GetRequiredService<IMusicProvider>();
+        Assert.Single(mock.PlaylistTracks);
+        Assert.Contains(mock.PlaylistTracks, t => t.Id == "track-a2");
+        Assert.DoesNotContain(mock.PlaylistTracks, t => t.Id == "track-a1");
+
+        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var history = await db.TrackHistories.OrderBy(h => h.AddedAt).ToListAsync();
+        Assert.Equal(2, history.Count);
+        Assert.Equal("track-a1", history[0].SpotifyTrackId);
+        Assert.Equal("track-a2", history[1].SpotifyTrackId);
+
+        var processed = await db.ProcessedAlbums.ToListAsync();
+        Assert.Single(processed);
+        Assert.Equal("album-a", processed[0].SpotifyAlbumId);
+
         var jobRunRepo = sp.GetRequiredService<IJobRunRepository>();
         var latest = await jobRunRepo.GetLatestAsync(CancellationToken.None);
         Assert.NotNull(latest);
-        Assert.Equal(1, latest.TracksAdded); // only track-a2 added
-        Assert.Equal(1, latest.TracksSkipped); // track-a1 skipped
+        Assert.Equal(1, latest.TracksAdded);
+        Assert.Equal(1, latest.TracksSkipped);
     }
 
     [Fact]
@@ -201,7 +259,13 @@ public sealed class JobOrchestratorTests
         await orchestrator.RunAsync(CancellationToken.None);
 
         var mock = (LocalMockMusicProvider)sp.GetRequiredService<IMusicProvider>();
+        Assert.Single(mock.PlaylistTracks);
+        Assert.Contains(mock.PlaylistTracks, t => t.Id == "track-b1");
         Assert.DoesNotContain(mock.PlaylistTracks, t => t.Id == "track-a1");
+
+        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var history = await db.TrackHistories.ToListAsync();
+        Assert.Empty(history);
 
         var jobRunRepo = sp.GetRequiredService<IJobRunRepository>();
         var latest = await jobRunRepo.GetLatestAsync(CancellationToken.None);
