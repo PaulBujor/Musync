@@ -7,3 +7,12 @@ riderModule.iml
 # Secrets / local overrides
 appsettings.Development.json
 .env
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# IDE
+.idea/
+
