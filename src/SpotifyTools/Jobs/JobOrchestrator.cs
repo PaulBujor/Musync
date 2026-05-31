@@ -70,6 +70,7 @@ public sealed class JobOrchestrator
             await _jobRunRepo.UpdateAsync(jobRun, ct);
 
             await _step4.ExecuteAsync(jobRun, ct);
+            throw;
         }
     }
 }

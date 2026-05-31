@@ -23,7 +23,7 @@ public sealed class SpotifyDbContext : DbContext
     {
         if (!optionsBuilder.IsConfigured)
         {
-            optionsBuilder.UseSqlite("Data Source=spotifyqueue.db");
+            optionsBuilder.UseSqlite("Data Source=spotifyqueue.db;Cache=Shared;Journal Mode=WAL;");
         }
     }
 }

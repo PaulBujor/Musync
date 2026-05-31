@@ -41,7 +41,7 @@ public sealed class SpotifyMusicProvider : IMusicProvider
         }
     }
 
-    public async IAsyncEnumerable<Track> GetAlbumTracksAsync(string albumId, [EnumeratorCancellation] CancellationToken ct)
+    public async IAsyncEnumerable<Track> GetAlbumTracksAsync(string albumId, string albumName, [EnumeratorCancellation] CancellationToken ct)
     {
         var url = $"https://api.spotify.com/v1/albums/{albumId}/tracks?limit=50";
         while (url is not null)
@@ -58,7 +58,7 @@ public sealed class SpotifyMusicProvider : IMusicProvider
                     item.GetProperty("id").GetString()!,
                     item.GetProperty("name").GetString()!,
                     item.GetProperty("artists")[0].GetProperty("name").GetString()!,
-                    ""
+                    albumName
                 );
             }
 

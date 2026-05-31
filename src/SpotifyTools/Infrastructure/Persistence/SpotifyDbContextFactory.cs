@@ -8,7 +8,7 @@ public sealed class SpotifyDbContextFactory : IDesignTimeDbContextFactory<Spotif
     public SpotifyDbContext CreateDbContext(string[] args)
     {
         var optionsBuilder = new DbContextOptionsBuilder<SpotifyDbContext>();
-        optionsBuilder.UseSqlite("Data Source=spotifyqueue.db");
+        optionsBuilder.UseSqlite("Data Source=spotifyqueue.db;Cache=Shared;Journal Mode=WAL;");
         return new SpotifyDbContext(optionsBuilder.Options);
     }
 }

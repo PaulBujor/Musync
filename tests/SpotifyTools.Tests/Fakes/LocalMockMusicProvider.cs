@@ -31,12 +31,12 @@ public sealed class LocalMockMusicProvider : IMusicProvider
         }
     }
 
-    public async IAsyncEnumerable<Track> GetAlbumTracksAsync(string albumId, [EnumeratorCancellation] CancellationToken ct)
+    public async IAsyncEnumerable<Track> GetAlbumTracksAsync(string albumId, string albumName, [EnumeratorCancellation] CancellationToken ct)
     {
         var album = _savedAlbums.FirstOrDefault(a => a.Id == albumId);
         if (album != null)
         {
-            foreach (var track in AlbumTracks(albumId))
+            foreach (var track in AlbumTracks(albumId, albumName))
             {
                 if (ct.IsCancellationRequested) yield break;
                 yield return track;
@@ -72,23 +72,23 @@ public sealed class LocalMockMusicProvider : IMusicProvider
         return Task.CompletedTask;
     }
 
-    private List<Track> AlbumTracks(string albumId)
+    private List<Track> AlbumTracks(string albumId, string albumName)
     {
         return albumId switch
         {
             "album-a" =>
             [
-                new Track("track-a1", "Track A1", "Artist A", "Album A"),
-                new Track("track-a2", "Track A2", "Artist A", "Album A"),
+                new Track("track-a1", "Track A1", "Artist A", albumName),
+                new Track("track-a2", "Track A2", "Artist A", albumName),
             ],
             "album-b" =>
             [
-                new Track("track-b1", "Track B1", "Artist B", "Album B"),
-                new Track("track-b2", "Track B2", "Artist B", "Album B"),
+                new Track("track-b1", "Track B1", "Artist B", albumName),
+                new Track("track-b2", "Track B2", "Artist B", albumName),
             ],
             "album-c" =>
             [
-                new Track("track-c1", "Track C1", "Artist C", "Album C"),
+                new Track("track-c1", "Track C1", "Artist C", albumName),
             ],
             _ => []
         };

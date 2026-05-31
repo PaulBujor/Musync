@@ -10,7 +10,7 @@ using SpotifyTools.Infrastructure.Spotify;
 using SpotifyTools.Jobs;
 using SpotifyTools.Options;
 using System.CommandLine;
-using System.CommandLine.Invocation;
+
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -22,7 +22,7 @@ builder.Services
 
 builder.Services.AddHybridCache();
 builder.Services.AddDbContext<SpotifyDbContext>(options =>
-    options.UseSqlite("Data Source=spotifyqueue.db"));
+    options.UseSqlite("Data Source=spotifyqueue.db;Cache=Shared;Journal Mode=WAL;"));
 
 builder.Services.AddScoped<ITrackHistoryRepository, TrackHistoryRepository>();
 builder.Services.AddScoped<IJobRunRepository, JobRunRepository>();
@@ -92,11 +92,23 @@ if (invokedCommand == syncCommand || invokedCommand == rootCommand)
 {
     await using var scope = host.Services.CreateAsyncScope();
     var orchestrator = scope.ServiceProvider.GetRequiredService<JobOrchestrator>();
-    await orchestrator.RunAsync(cts.Token);
+    try
+    {
+        await orchestrator.RunAsync(cts.Token);
+    }
+    catch (OperationCanceledException)
+    {
+        return 2;
+    }
+    catch
+    {
+        return 1;
+    }
 }
 else
 {
     await parseResult.InvokeAsync(cancellationToken: cts.Token);
+    return parseResult.Errors.Count == 0 ? 0 : 1;
 }
 
-return parseResult.Errors.Count == 0 ? 0 : 1;
+return 0;

@@ -58,39 +58,48 @@ public sealed class SyncStep2_AddNewTracks
         var newTracks = new List<Domain.Track>();
         var newlyProcessedAlbums = new List<ProcessedAlbum>();
         var albumsProcessed = 0;
-        var semaphore = new SemaphoreSlim(_options.MaxConcurrentRequests);
+        var tracksSkipped = 0;
+        var lockObj = new object();
 
-        await foreach (var album in _music.GetSavedAlbumsAsync(ct))
-        {
-            if (processedAlbumIds.Contains(album.Id))
-                continue;
-
-            Log.ProcessingAlbum(_logger, album.Name, album.Artist);
-
-            var albumTracks = new List<Domain.Track>();
-            await foreach (var track in _music.GetAlbumTracksAsync(album.Id, ct))
+        await Parallel.ForEachAsync(
+            _music.GetSavedAlbumsAsync(ct),
+            new ParallelOptions { MaxDegreeOfParallelism = _options.MaxConcurrentRequests, CancellationToken = ct },
+            async (album, ct2) =>
             {
-                if (likedTrackIds.Contains(track.Id) || historyTrackIds.Contains(track.Id))
+                if (processedAlbumIds.Contains(album.Id))
+                    return;
+
+                Log.ProcessingAlbum(_logger, album.Name, album.Artist);
+
+                var albumTracks = new List<Domain.Track>();
+                await foreach (var track in _music.GetAlbumTracksAsync(album.Id, album.Name, ct2))
                 {
-                    jobRun.TracksSkipped++;
-                    continue;
+                    if (likedTrackIds.Contains(track.Id) || historyTrackIds.Contains(track.Id))
+                    {
+                        Interlocked.Increment(ref tracksSkipped);
+                        continue;
+                    }
+                    albumTracks.Add(track);
                 }
-                albumTracks.Add(track);
-            }
 
-            newTracks.AddRange(albumTracks);
-            albumsProcessed++;
+                lock (lockObj)
+                {
+                    newTracks.AddRange(albumTracks);
+                    albumsProcessed++;
 
-            newlyProcessedAlbums.Add(new ProcessedAlbum
-            {
-                Id = Guid.CreateVersion7(),
-                SpotifyAlbumId = album.Id,
-                AlbumName = album.Name,
-                ArtistName = album.Artist,
-                FirstProcessedAt = DateTime.UtcNow,
-                LastSeenAt = DateTime.UtcNow
+                    newlyProcessedAlbums.Add(new ProcessedAlbum
+                    {
+                        Id = Guid.CreateVersion7(),
+                        SpotifyAlbumId = album.Id,
+                        AlbumName = album.Name,
+                        ArtistName = album.Artist,
+                        FirstProcessedAt = DateTime.UtcNow,
+                        LastSeenAt = DateTime.UtcNow
+                    });
+                }
             });
-        }
+
+        jobRun.TracksSkipped = tracksSkipped;
 
         if (newTracks.Count > 0)
         {
