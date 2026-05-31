@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using SpotifyTools.Domain;
 using SpotifyTools.Domain.Interfaces;
 using SpotifyTools.Infrastructure.Persistence;
 using SpotifyTools.Infrastructure.Spotify;
@@ -30,39 +29,23 @@ builder.Services.AddScoped<SyncStep2_AddNewTracks>();
 builder.Services.AddScoped<SyncStep4_GenerateReport>();
 builder.Services.AddScoped<JobOrchestrator>();
 
-var providerType = Enum.Parse<MusicProviderType>(
-    builder.Configuration.GetSection("Provider").Value ?? "Spotify");
-
-switch (providerType)
-{
-    case MusicProviderType.Spotify:
-        builder.Services.AddSingleton<ISpotifyAuthenticator, SpotifyAuthenticator>();
-        builder.Services.AddTransient<SpotifyTokenHandler>();
-        builder.Services
-            .AddHttpClient<IMusicProvider, SpotifyMusicProvider>()
-            .AddHttpMessageHandler<SpotifyTokenHandler>()
-            .AddStandardResilienceHandler(options =>
-            {
-                var spotifyOptions = new SpotifyOptions();
-                builder.Configuration.GetSection("Spotify").Bind(spotifyOptions);
-                options.Retry.MaxRetryAttempts = spotifyOptions.MaxRetries;
-                options.Retry.DelayGenerator = args =>
-                {
-                    if (args.Outcome.Result?.Headers.RetryAfter?.Delta is { } delta)
-                        return ValueTask.FromResult<TimeSpan?>(delta);
-                    return ValueTask.FromResult<TimeSpan?>(null);
-                };
-            });
-        break;
-
-    case MusicProviderType.Mock:
-        throw new InvalidOperationException(
-            "Mock provider is only available when running from the test project. " +
-            "Set Provider=Spotify or pass --Provider Spotify for production use.");
-
-    default:
-        throw new InvalidOperationException($"Unknown music provider: {providerType}");
-}
+builder.Services.AddSingleton<ISpotifyAuthenticator, SpotifyAuthenticator>();
+builder.Services.AddTransient<SpotifyTokenHandler>();
+builder.Services
+    .AddHttpClient<IMusicProvider, SpotifyMusicProvider>()
+    .AddHttpMessageHandler<SpotifyTokenHandler>()
+    .AddStandardResilienceHandler(options =>
+    {
+        var spotifyOptions = new SpotifyOptions();
+        builder.Configuration.GetSection("Spotify").Bind(spotifyOptions);
+        options.Retry.MaxRetryAttempts = spotifyOptions.MaxRetries;
+        options.Retry.DelayGenerator = args =>
+        {
+            if (args.Outcome.Result?.Headers.RetryAfter?.Delta is { } delta)
+                return ValueTask.FromResult<TimeSpan?>(delta);
+            return ValueTask.FromResult<TimeSpan?>(null);
+        };
+    });
 
 var host = builder.Build();
 

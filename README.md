@@ -76,13 +76,10 @@ Settings come from `appsettings.json` (checked in, safe defaults) overridden by 
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `Provider` | `Spotify` | `Spotify` or `Mock` |
 | `Spotify__ClientId` | — | Spotify app client ID |
 | `Spotify__ClientSecret` | — | Spotify app client secret |
 | `Spotify__QueuePlaylistId` | — | Target playlist ID |
 | `Spotify__MaxConcurrentRequests` | `3` | Parallel album track fetches |
-
-Set `Provider=Mock` to test without Spotify credentials (uses in-memory seed data — only available via the test project).
 
 ## Project Structure
 

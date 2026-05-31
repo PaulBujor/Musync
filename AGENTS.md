@@ -30,7 +30,7 @@ dotnet add src/SpotifyTools package System.CommandLine
 |------|---------|
 | Direct | `dotnet run --project src/SpotifyTools` |
 | Docker | `docker compose up` (uses `compose.yaml`) |
-| Mock mode | `Provider=Mock dotnet run --project src/SpotifyTools` |
+| Tests | `dotnet test` (mock provider, no credentials needed) |
 
 ## Architecture (non-obvious from filenames)
 
@@ -42,7 +42,7 @@ dotnet add src/SpotifyTools package System.CommandLine
 
 ## Key Patterns
 
-- **Provider selection**: Driven by `Provider` config key (`Spotify` | `Mock` enum), switched in `Program.cs` via `switch` — no conditional compilation or env-based magic
+- **Provider selection**: Always Spotify in production. Mock provider lives in `tests/Fakes/` and is registered directly in test DI.
 - **Auth**: PKCE OAuth with browser-based flow on first run; refresh token persisted to `AppSettings` table via `ISpotifyAuthenticator` / `SpotifyTokenHandler` (a `DelegatingHandler`)
 - **Token management**: `SpotifyTokenHandler` is a `DelegatingHandler` — NOT mixed into `SpotifyMusicProvider`. Token refresh serialised with `SemaphoreSlim(1,1)`. New refresh tokens written immediately to DB in a dedicated `DbContext` transaction.
 - **Pagination**: `IAsyncEnumerable<T>` on all paginated Spotify endpoints (lazy streaming, not full buffering)
