@@ -3,11 +3,11 @@ using SpotifyTools.Domain;
 
 namespace SpotifyTools.Jobs;
 
-public sealed class SyncStep4_GenerateReport
+public sealed class SyncStep3_GenerateReport
 {
-    private readonly ILogger<SyncStep4_GenerateReport> _logger;
+    private readonly ILogger<SyncStep3_GenerateReport> _logger;
 
-    public SyncStep4_GenerateReport(ILogger<SyncStep4_GenerateReport> logger)
+    public SyncStep3_GenerateReport(ILogger<SyncStep3_GenerateReport> logger)
     {
         _logger = logger;
     }

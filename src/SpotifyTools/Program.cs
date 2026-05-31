@@ -26,7 +26,7 @@ builder.Services.AddScoped<IJobRunRepository, JobRunRepository>();
 builder.Services.AddScoped<IAppSettingsRepository, AppSettingsRepository>();
 builder.Services.AddScoped<SyncStep1_SnapshotAndDiff>();
 builder.Services.AddScoped<SyncStep2_AddNewTracks>();
-builder.Services.AddScoped<SyncStep4_GenerateReport>();
+builder.Services.AddScoped<SyncStep3_GenerateReport>();
 builder.Services.AddScoped<JobOrchestrator>();
 
 builder.Services.AddSingleton<ISpotifyAuthenticator, SpotifyAuthenticator>();

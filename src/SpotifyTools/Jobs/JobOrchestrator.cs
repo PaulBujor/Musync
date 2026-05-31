@@ -10,19 +10,19 @@ public sealed class JobOrchestrator
     private readonly ILogger<JobOrchestrator> _logger;
     private readonly SyncStep1_SnapshotAndDiff _step1;
     private readonly SyncStep2_AddNewTracks _step2;
-    private readonly SyncStep4_GenerateReport _step4;
+    private readonly SyncStep3_GenerateReport _step3;
 
     public JobOrchestrator(
         IJobRunRepository jobRunRepo,
         SyncStep1_SnapshotAndDiff step1,
         SyncStep2_AddNewTracks step2,
-        SyncStep4_GenerateReport step4,
+        SyncStep3_GenerateReport step3,
         ILogger<JobOrchestrator> logger)
     {
         _jobRunRepo = jobRunRepo;
         _step1 = step1;
         _step2 = step2;
-        _step4 = step4;
+        _step3 = step3;
         _logger = logger;
     }
 
@@ -49,7 +49,7 @@ public sealed class JobOrchestrator
             jobRun.FinishedAt = DateTime.UtcNow;
             await _jobRunRepo.UpdateAsync(jobRun, ct);
 
-            await _step4.ExecuteAsync(jobRun, ct);
+            await _step3.ExecuteAsync(jobRun, ct);
         }
         catch (OperationCanceledException)
         {
@@ -57,7 +57,7 @@ public sealed class JobOrchestrator
             jobRun.FinishedAt = DateTime.UtcNow;
             jobRun.ErrorMessage = "Cancelled by user";
             await _jobRunRepo.UpdateAsync(jobRun, ct);
-            await _step4.ExecuteAsync(jobRun, ct);
+            await _step3.ExecuteAsync(jobRun, ct);
             throw;
         }
         catch (Exception ex)
@@ -69,7 +69,7 @@ public sealed class JobOrchestrator
             jobRun.ErrorMessage = ex.Message;
             await _jobRunRepo.UpdateAsync(jobRun, ct);
 
-            await _step4.ExecuteAsync(jobRun, ct);
+            await _step3.ExecuteAsync(jobRun, ct);
             throw;
         }
     }

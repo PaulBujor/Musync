@@ -43,11 +43,11 @@ public sealed class JobOrchestratorTests
         services.AddSingleton<ILogger<JobOrchestrator>>(NullLogger<JobOrchestrator>.Instance);
         services.AddSingleton<ILogger<SyncStep1_SnapshotAndDiff>>(NullLogger<SyncStep1_SnapshotAndDiff>.Instance);
         services.AddSingleton<ILogger<SyncStep2_AddNewTracks>>(NullLogger<SyncStep2_AddNewTracks>.Instance);
-        services.AddSingleton<ILogger<SyncStep4_GenerateReport>>(NullLogger<SyncStep4_GenerateReport>.Instance);
+        services.AddSingleton<ILogger<SyncStep3_GenerateReport>>(NullLogger<SyncStep3_GenerateReport>.Instance);
 
         services.AddSingleton<SyncStep1_SnapshotAndDiff>();
         services.AddSingleton<SyncStep2_AddNewTracks>();
-        services.AddSingleton<SyncStep4_GenerateReport>();
+        services.AddSingleton<SyncStep3_GenerateReport>();
         services.AddSingleton<JobOrchestrator>();
 
         var sp = services.BuildServiceProvider();
