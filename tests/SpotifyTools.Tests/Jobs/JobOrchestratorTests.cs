@@ -95,7 +95,7 @@ public sealed class JobOrchestratorTests
     }
 
     [Fact]
-    public async Task RunAsync_LikedTrackIsRemovedFromPlaylist()
+    public async Task RunAsync_LikedTrackIsSkippedInStep2()
     {
         var albums = new List<Album>
         {
@@ -114,6 +114,7 @@ public sealed class JobOrchestratorTests
         var jobRunRepo = sp.GetRequiredService<IJobRunRepository>();
         var latest = await jobRunRepo.GetLatestAsync(CancellationToken.None);
         Assert.NotNull(latest);
+        Assert.Equal(0, latest.TracksRemovedLiked); // no tracks were in the playlist to remove
         Assert.Equal(1, latest.TracksAdded); // only track-a2 added
         Assert.Equal(1, latest.TracksSkipped); // track-a1 was liked → skipped in Step 2
     }
@@ -198,6 +199,9 @@ public sealed class JobOrchestratorTests
 
         var orchestrator = sp.GetRequiredService<JobOrchestrator>();
         await orchestrator.RunAsync(CancellationToken.None);
+
+        var mock = (LocalMockMusicProvider)sp.GetRequiredService<IMusicProvider>();
+        Assert.DoesNotContain(mock.PlaylistTracks, t => t.Id == "track-a1");
 
         var jobRunRepo = sp.GetRequiredService<IJobRunRepository>();
         var latest = await jobRunRepo.GetLatestAsync(CancellationToken.None);
