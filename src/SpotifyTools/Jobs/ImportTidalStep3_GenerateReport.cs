@@ -5,7 +5,7 @@ namespace SpotifyTools.Jobs;
 
 public sealed class ImportTidalStep3_GenerateReport(ILogger<ImportTidalStep3_GenerateReport> logger)
 {
-    public Task ExecuteAsync(JobRun jobRun, CancellationToken ct)
+    public Task ExecuteAsync(JobRun jobRun)
     {
         var duration = jobRun.FinishedAt.HasValue
             ? jobRun.FinishedAt.Value - jobRun.StartedAt

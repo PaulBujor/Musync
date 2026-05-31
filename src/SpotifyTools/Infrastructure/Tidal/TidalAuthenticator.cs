@@ -20,11 +20,11 @@ public sealed class TidalAuthenticator(
     HttpClient httpClient)
     : ITidalAuthenticator
 {
-    private const string RedirectUri = "http://127.0.0.1:5000/callback";
     private const string TokenUrl = "https://auth.tidal.com/v1/oauth2/token";
     private const string AuthUrl = "https://login.tidal.com/authorize";
 
     private readonly TidalOptions _options = options.Value;
+    private string RedirectUri => _options.RedirectUri;
 
     public async Task EnsureAuthenticatedAsync(CancellationToken ct)
     {
@@ -42,7 +42,7 @@ public sealed class TidalAuthenticator(
         var state = Guid.NewGuid().ToString("N");
 
         using var listener = new HttpListener();
-        listener.Prefixes.Add("http://127.0.0.1:5000/callback/");
+        listener.Prefixes.Add(_options.RedirectUri.TrimEnd('/') + "/");
         listener.Start();
 
         var authUrl = $"{AuthUrl}?client_id={_options.ClientId}" +

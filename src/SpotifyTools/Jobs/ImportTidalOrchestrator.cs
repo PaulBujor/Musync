@@ -35,7 +35,7 @@ public sealed class ImportTidalOrchestrator(
             db.JobRuns.Update(jobRun);
             await db.SaveChangesAsync(ct);
 
-            await step3.ExecuteAsync(jobRun, ct);
+            await step3.ExecuteAsync(jobRun);
         }
         catch (OperationCanceledException)
         {
@@ -44,7 +44,7 @@ public sealed class ImportTidalOrchestrator(
             jobRun.ErrorMessage = "Cancelled by user";
             db.JobRuns.Update(jobRun);
             await db.SaveChangesAsync(ct);
-            await step3.ExecuteAsync(jobRun, ct);
+            await step3.ExecuteAsync(jobRun);
             throw;
         }
         catch (Exception ex)
@@ -55,7 +55,7 @@ public sealed class ImportTidalOrchestrator(
             jobRun.ErrorMessage = ex.Message;
             db.JobRuns.Update(jobRun);
             await db.SaveChangesAsync(ct);
-            await step3.ExecuteAsync(jobRun, ct);
+            await step3.ExecuteAsync(jobRun);
             throw;
         }
     }

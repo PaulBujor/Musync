@@ -1,16 +1,18 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using SpotifyTools.Domain;
 using SpotifyTools.Domain.Interfaces;
 using SpotifyTools.Infrastructure.Spotify.Models;
 
 namespace SpotifyTools.Infrastructure.Mapping;
 
-public sealed class SpotifyTrackMapper(HttpClient http) : ITrackMapper
+public sealed class SpotifyTrackMapper(
+    HttpClient http,
+    ILogger<SpotifyTrackMapper> logger) : ITrackMapper
 {
     public async Task<string?> FindSpotifyTrackIdAsync(Track track, CancellationToken ct)
     {
-        // Try ISRC first
         if (!string.IsNullOrEmpty(track.Isrc))
         {
             var result = await SearchByQueryAsync($"isrc:{track.Isrc}", ct);
@@ -18,7 +20,6 @@ public sealed class SpotifyTrackMapper(HttpClient http) : ITrackMapper
                 return result;
         }
 
-        // Fall back to name + artist search
         var fallback = await SearchByQueryAsync(
             $"track:{track.Name} artist:{track.Artist}", ct);
 
@@ -30,7 +31,10 @@ public sealed class SpotifyTrackMapper(HttpClient http) : ITrackMapper
         var url = $"search?q={Uri.EscapeDataString(query)}&type=track&limit=1";
         var response = await http.GetAsync(url, ct);
         if (!response.IsSuccessStatusCode)
+        {
+            Log.SpotifySearchFailed(logger, (int)response.StatusCode, query);
             return null;
+        }
 
         using var doc = await JsonDocument.ParseAsync(
             await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
@@ -44,4 +48,10 @@ public sealed class SpotifyTrackMapper(HttpClient http) : ITrackMapper
 
         return items[0].GetProperty("id").GetString();
     }
+}
+
+public static partial class Log
+{
+    [LoggerMessage(LogLevel.Warning, "Spotify search failed: {StatusCode} for query '{Query}'")]
+    public static partial void SpotifySearchFailed(ILogger logger, int statusCode, string query);
 }
