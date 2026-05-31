@@ -1,0 +1,6 @@
+﻿services:
+  spotifytools:
+    image: spotifytools
+    build:
+      context: .
+      dockerfile: src/SpotifyTools/Dockerfile
