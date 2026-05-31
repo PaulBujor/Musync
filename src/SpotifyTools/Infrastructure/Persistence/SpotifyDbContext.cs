@@ -17,6 +17,6 @@ public sealed class SpotifyDbContext : DbContext
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         if (!optionsBuilder.IsConfigured)
-            optionsBuilder.UseSqlite("Data Source=spotifyqueue.db;Cache=Shared;Journal Mode=WAL;");
+            optionsBuilder.UseSqlite("Data Source=spotifyqueue.db;Cache=Shared;");
     }
 }

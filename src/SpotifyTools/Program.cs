@@ -19,14 +19,14 @@ builder.Services
 
 builder.Services.AddHybridCache();
 builder.Services.AddDbContext<SpotifyDbContext>(options =>
-    options.UseSqlite("Data Source=spotifyqueue.db;Cache=Shared;Journal Mode=WAL;"));
+    options.UseSqlite("Data Source=spotifyqueue.db;Cache=Shared;"));
 
 builder.Services.AddScoped<SyncStep1_SnapshotAndDiff>();
 builder.Services.AddScoped<SyncStep2_AddNewTracks>();
 builder.Services.AddScoped<SyncStep3_GenerateReport>();
 builder.Services.AddScoped<JobOrchestrator>();
 
-builder.Services.AddSingleton<ISpotifyAuthenticator, SpotifyAuthenticator>();
+builder.Services.AddScoped<ISpotifyAuthenticator, SpotifyAuthenticator>();
 builder.Services.AddTransient<SpotifyTokenHandler>();
 builder.Services
     .AddHttpClient<IMusicProvider, SpotifyMusicProvider>(client =>
