@@ -1,12 +1,8 @@
-# Spotify Queue Manager — Agent Guide
+# SpotifyTools — Agent Guide
 
 ## Ground Truth
 
-**`Spotify Queue Manager.md`** is the authoritative requirements/spec doc. All implementation decisions must align with it.
-
-## Current State
-
-A .NET 10 scaffold (`SpotifyTools` / `SpotifyTools.sln`) with a no-op `Program.cs`. The repo needs to be restructured to `src/` and `tests/` layout as prescribed in the requirements doc, but the project keeps the name `SpotifyTools` (may expand beyond queue management later).
+**`README.md`** is the authoritative reference for project intent, setup, and design decisions.
 
 ## Setup — Exact Commands
 
@@ -50,7 +46,7 @@ dotnet add src/SpotifyTools package System.CommandLine
 - **Auth**: PKCE OAuth with browser-based flow on first run; refresh token persisted to `AppSettings` table via `ISpotifyAuthenticator` / `SpotifyTokenHandler` (a `DelegatingHandler`)
 - **Token management**: `SpotifyTokenHandler` is a `DelegatingHandler` — NOT mixed into `SpotifyMusicProvider`. Token refresh serialised with `SemaphoreSlim(1,1)`. New refresh tokens written immediately to DB in a dedicated `DbContext` transaction.
 - **Pagination**: `IAsyncEnumerable<T>` on all paginated Spotify endpoints (lazy streaming, not full buffering)
-- **Parallelism**: `SemaphoreSlim` throttling (default: 3 concurrent) for album track-list fetches
+- **Parallelism**: `Parallel.ForEachAsync` with `MaxDegreeOfParallelism` (default: 3 concurrent) for album track-list fetches
 - **Caching**: `IHybridCache` (in-process only, no distributed backend; `AddHybridCache()` with no extras). Used for per-run `HashSet<string>` lookups (liked tracks, track history, queue contents).
 - **Membership checks**: `HashSet<string>.Contains()` — never per-track SQLite or Spotify queries
 - **Resilience**: Polly via `AddStandardResilienceHandler()` with custom `Retry-After` header support
