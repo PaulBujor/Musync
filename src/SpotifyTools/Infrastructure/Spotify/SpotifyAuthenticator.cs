@@ -19,7 +19,7 @@ public sealed class SpotifyAuthenticator(
     HttpClient httpClient)
     : ISpotifyAuthenticator
 {
-    private const string RedirectUri = "http://localhost:5000/callback";
+    private const string RedirectUri = "http://127.0.0.1:5000/callback";
     private const string TokenUrl = "https://accounts.spotify.com/api/token";
     private const string AuthUrl = "https://accounts.spotify.com/authorize";
     private static readonly string[] Scopes =
@@ -48,7 +48,7 @@ public sealed class SpotifyAuthenticator(
         var state = Guid.NewGuid().ToString("N");
 
         using var listener = new HttpListener();
-        listener.Prefixes.Add("http://localhost:5000/callback/");
+        listener.Prefixes.Add("http://127.0.0.1:5000/callback/");
         listener.Start();
 
         var authUrl = $"{AuthUrl}?client_id={_options.ClientId}" +
