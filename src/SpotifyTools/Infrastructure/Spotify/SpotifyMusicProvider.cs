@@ -56,7 +56,7 @@ public sealed class SpotifyMusicProvider(HttpClient http) : IMusicProvider
     public async IAsyncEnumerable<Track> GetPlaylistTracksAsync(string playlistId,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var url = $"playlists/{playlistId}/tracks?limit=50";
+        var url = $"playlists/{playlistId}/items?limit=50";
         while (url is not null)
         {
             var response = await http.GetAsync(url, ct);
@@ -70,14 +70,14 @@ public sealed class SpotifyMusicProvider(HttpClient http) : IMusicProvider
 
             foreach (var item in page.Items)
             {
-                if (item.Track is null)
+                if (item.Item is null)
                     continue;
 
                 yield return new Track(
-                    item.Track.Id,
-                    item.Track.Name,
-                    item.Track.Artists[0].Name,
-                    item.Track.Album.Name);
+                    item.Item.Id,
+                    item.Item.Name,
+                    item.Item.Artists[0].Name,
+                    item.Item.Album.Name);
             }
 
             url = page.Next;
@@ -145,16 +145,16 @@ public sealed class SpotifyMusicProvider(HttpClient http) : IMusicProvider
     {
         var payload = new { uris = uris.Select(u => $"spotify:track:{u}").ToArray() };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var response = await http.PostAsync($"playlists/{playlistId}/tracks", content, ct);
+        var response = await http.PostAsync($"playlists/{playlistId}/items", content, ct);
         response.EnsureSuccessStatusCode();
     }
 
     private async Task RemoveBatchAsync(string playlistId, List<string> uris, CancellationToken ct)
     {
-        var tracks = uris.Select(u => new { uri = $"spotify:track:{u}" }).ToArray();
-        var payload = new { tracks };
+        var items = uris.Select(u => new { uri = $"spotify:track:{u}" }).ToArray();
+        var payload = new { items };
         var request =
-            new HttpRequestMessage(HttpMethod.Delete, $"playlists/{playlistId}/tracks")
+            new HttpRequestMessage(HttpMethod.Delete, $"playlists/{playlistId}/items")
             {
                 Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
             };

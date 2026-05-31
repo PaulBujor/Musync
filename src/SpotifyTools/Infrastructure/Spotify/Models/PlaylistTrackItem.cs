@@ -4,8 +4,8 @@ namespace SpotifyTools.Infrastructure.Spotify.Models;
 
 public class PlaylistTrackItem
 {
-    [JsonPropertyName("track")]
-    public PlaylistTrackDto Track { get; set; } = null!;
+    [JsonPropertyName("item")]
+    public PlaylistTrackDto Item { get; set; } = null!;
 }
 
 public class PlaylistTrackDto
