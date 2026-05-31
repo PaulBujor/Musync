@@ -53,6 +53,27 @@ public sealed class SpotifyMusicProvider(HttpClient http) : IMusicProvider
         }
     }
 
+    public async IAsyncEnumerable<Track> GetSavedTracksAsync([EnumeratorCancellation] CancellationToken ct)
+    {
+        var url = "me/tracks?limit=50";
+        while (url is not null)
+        {
+            var response = await http.GetAsync(url, ct);
+            response.EnsureSuccessStatusCode();
+
+            var page = await response.Content
+                .ReadFromJsonAsync(SpotifyApiJsonContext.Default.PagedResponseLikedTrackItem, ct);
+
+            if (page is null)
+                yield break;
+
+            foreach (var item in page.Items)
+                yield return new Track(item.Track.Id, item.Track.Name, item.Track.Artists[0].Name, item.Track.Album.Name, Isrc: null);
+
+            url = page.Next;
+        }
+    }
+
     public async IAsyncEnumerable<Track> GetPlaylistTracksAsync(string playlistId,
         [EnumeratorCancellation] CancellationToken ct)
     {

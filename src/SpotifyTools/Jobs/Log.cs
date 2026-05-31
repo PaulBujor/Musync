@@ -58,4 +58,20 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Processing album {AlbumName} by {ArtistName}")]
     public static partial void ProcessingAlbum(ILogger logger, string albumName, string artistName);
+
+    // Tidal import logs
+    [LoggerMessage(Level = LogLevel.Information, Message = "=== Tidal Import Complete ===")]
+    public static partial void TidalCompleteHeader(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Tidal tracks mapped: {Count}")]
+    public static partial void TidalTracksMapped(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Step 1: Fetch Tidal favorites & map to Spotify tracks")]
+    public static partial void TidalStep1Start(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Step 2: Add mapped tracks to queue playlist")]
+    public static partial void TidalStep2Start(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not find Spotify match for Tidal track \"{TrackName}\" by {ArtistName}")]
+    public static partial void TidalTrackNotMapped(ILogger logger, string trackName, string artistName);
 }

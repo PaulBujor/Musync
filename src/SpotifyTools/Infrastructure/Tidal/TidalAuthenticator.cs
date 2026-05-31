@@ -11,40 +11,32 @@ using SpotifyTools.Domain.Interfaces;
 using SpotifyTools.Infrastructure.Persistence;
 using SpotifyTools.Options;
 
-namespace SpotifyTools.Infrastructure.Spotify;
+namespace SpotifyTools.Infrastructure.Tidal;
 
-public sealed class SpotifyAuthenticator(
-    IOptions<SpotifyOptions> options,
+public sealed class TidalAuthenticator(
+    IOptions<TidalOptions> options,
     SpotifyDbContext db,
-    ILogger<SpotifyAuthenticator> logger,
+    ILogger<TidalAuthenticator> logger,
     HttpClient httpClient)
-    : ISpotifyAuthenticator
+    : ITidalAuthenticator
 {
     private const string RedirectUri = "http://127.0.0.1:5000/callback";
-    private const string TokenUrl = "https://accounts.spotify.com/api/token";
-    private const string AuthUrl = "https://accounts.spotify.com/authorize";
-    private static readonly string[] Scopes =
-    [
-        "user-library-read",
-        "playlist-modify-public",
-        "playlist-modify-private",
-        "playlist-read-private",
-        "playlist-read-collaborative"
-    ];
+    private const string TokenUrl = "https://auth.tidal.com/v1/oauth2/token";
+    private const string AuthUrl = "https://login.tidal.com/authorize";
 
-    private readonly SpotifyOptions _options = options.Value;
+    private readonly TidalOptions _options = options.Value;
 
     public async Task EnsureAuthenticatedAsync(CancellationToken ct)
     {
         var existingToken = await db.RefreshTokens
-            .Where(x => x.Provider == "spotify")
+            .Where(x => x.Provider == "tidal")
             .OrderByDescending(x => x.UpdatedAt)
             .FirstOrDefaultAsync(ct);
 
         if (existingToken is not null)
             return;
 
-        logger.LogInformation("No Spotify refresh token found. Starting browser-based OAuth flow...");
+        logger.LogInformation("No Tidal refresh token found. Starting browser-based OAuth flow...");
 
         var (codeVerifier, codeChallenge) = GeneratePkcePair();
         var state = Guid.NewGuid().ToString("N");
@@ -56,12 +48,12 @@ public sealed class SpotifyAuthenticator(
         var authUrl = $"{AuthUrl}?client_id={_options.ClientId}" +
                        $"&response_type=code" +
                        $"&redirect_uri={Uri.EscapeDataString(RedirectUri)}" +
-                       $"&scope={Uri.EscapeDataString(string.Join(" ", Scopes))}" +
+                       $"&scope={Uri.EscapeDataString("user.read user_collection.read")}" +
                        $"&state={state}" +
                        $"&code_challenge_method=S256" +
                        $"&code_challenge={codeChallenge}";
 
-        logger.LogInformation("Opening browser for Spotify authorization...");
+        logger.LogInformation("Opening browser for Tidal authorization...");
         Process.Start(new ProcessStartInfo
         {
             FileName = authUrl,
@@ -76,7 +68,7 @@ public sealed class SpotifyAuthenticator(
         {
             var error = context.Request.QueryString["error"] ?? "unknown";
             await WriteResponse(context, $"Authorization failed: {error}");
-            throw new InvalidOperationException($"Spotify authorization failed: {error}");
+            throw new InvalidOperationException($"Tidal authorization failed: {error}");
         }
 
         if (returnedState != state)
@@ -86,7 +78,6 @@ public sealed class SpotifyAuthenticator(
         }
 
         await WriteResponse(context, "Authentication successful! You can close this window.");
-
         await ExchangeCodeForTokens(code, codeVerifier, ct);
     }
 
@@ -110,12 +101,12 @@ public sealed class SpotifyAuthenticator(
         {
             Id = Guid.CreateVersion7(),
             Token = refreshToken,
-            Provider = "spotify",
+            Provider = "tidal",
             UpdatedAt = DateTime.UtcNow
         });
         await db.SaveChangesAsync(ct);
 
-        logger.LogInformation("Spotify refresh token persisted successfully");
+        logger.LogInformation("Tidal refresh token persisted successfully");
     }
 
     private static (string verifier, string challenge) GeneratePkcePair()

@@ -5,7 +5,7 @@ namespace SpotifyTools.Infrastructure.Spotify.Models;
 public class LikedTrackItem
 {
     [JsonPropertyName("track")]
-    public TrackRefDto Track { get; set; } = null!;
+    public TrackFullDto Track { get; set; } = null!;
 }
 
 public class TrackRefDto

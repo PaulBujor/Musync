@@ -4,23 +4,22 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SpotifyTools.Domain;
 using SpotifyTools.Domain.Interfaces;
 using SpotifyTools.Infrastructure.Persistence;
 using SpotifyTools.Options;
 
-namespace SpotifyTools.Infrastructure.Spotify;
+namespace SpotifyTools.Infrastructure.Tidal;
 
-public sealed class SpotifyTokenHandler(
-    IOptions<SpotifyOptions> options,
-    ISpotifyAuthenticator authenticator,
+public sealed class TidalTokenHandler(
+    IOptions<TidalOptions> options,
+    ITidalAuthenticator authenticator,
     SpotifyDbContext db,
-    ILogger<SpotifyTokenHandler> logger)
+    ILogger<TidalTokenHandler> logger)
     : DelegatingHandler
 {
-    private const string TokenUrl = "https://accounts.spotify.com/api/token";
+    private const string TokenUrl = "https://auth.tidal.com/v1/oauth2/token";
 
-    private readonly SpotifyOptions _options = options.Value;
+    private readonly TidalOptions _options = options.Value;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
     private string? _accessToken;
@@ -35,7 +34,7 @@ public sealed class SpotifyTokenHandler(
 
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
-            logger.LogWarning("Received 401. Forcing token refresh...");
+            logger.LogWarning("Received 401. Forcing Tidal token refresh...");
             _accessToken = null;
             await EnsureTokenAsync(ct);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
@@ -57,7 +56,7 @@ public sealed class SpotifyTokenHandler(
                 return;
 
             var existingToken = await db.RefreshTokens
-                .Where(x => x.Provider == "spotify")
+                .Where(x => x.Provider == "tidal")
                 .OrderByDescending(x => x.UpdatedAt)
                 .FirstOrDefaultAsync(ct);
 
@@ -65,7 +64,7 @@ public sealed class SpotifyTokenHandler(
             {
                 await authenticator.EnsureAuthenticatedAsync(ct);
                 existingToken = await db.RefreshTokens
-                    .Where(x => x.Provider == "spotify")
+                    .Where(x => x.Provider == "tidal")
                     .OrderByDescending(x => x.UpdatedAt)
                     .FirstOrDefaultAsync(ct);
             }
@@ -80,16 +79,14 @@ public sealed class SpotifyTokenHandler(
 
     private async Task RefreshAccessTokenAsync(string refreshToken, CancellationToken ct)
     {
-        var authBytes = Encoding.ASCII.GetBytes($"{_options.ClientId}:{_options.ClientSecret}");
         var request = new HttpRequestMessage(HttpMethod.Post, TokenUrl)
         {
             Content = new FormUrlEncodedContent([
                 new KeyValuePair<string, string>("grant_type", "refresh_token"),
-                new KeyValuePair<string, string>("refresh_token", refreshToken)
+                new KeyValuePair<string, string>("refresh_token", refreshToken),
+                new KeyValuePair<string, string>("client_id", _options.ClientId)
             ])
         };
-        request.Headers.Authorization = new AuthenticationHeaderValue(
-            "Basic", Convert.ToBase64String(authBytes));
 
         var response = await base.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
@@ -105,19 +102,19 @@ public sealed class SpotifyTokenHandler(
         if (root.TryGetProperty("refresh_token", out var newRefreshToken))
         {
             var newToken = newRefreshToken.GetString()!;
-            logger.LogInformation("Spotify rotated refresh token. Persisting immediately...");
+            logger.LogInformation("Tidal rotated refresh token. Persisting immediately...");
 
             var existing = await db.RefreshTokens
-                .Where(x => x.Provider == "spotify")
+                .Where(x => x.Provider == "tidal")
                 .OrderByDescending(x => x.UpdatedAt)
                 .FirstOrDefaultAsync(ct);
             if (existing is null)
             {
-                db.RefreshTokens.Add(new RefreshTokens
+                db.RefreshTokens.Add(new Domain.RefreshTokens
                 {
                     Id = Guid.CreateVersion7(),
                     Token = newToken,
-                    Provider = "spotify",
+                    Provider = "tidal",
                     UpdatedAt = DateTime.UtcNow
                 });
             }

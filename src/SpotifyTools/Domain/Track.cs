@@ -1,3 +1,3 @@
 namespace SpotifyTools.Domain;
 
-public sealed record Track(string Id, string Name, string Artist, string Album);
+public sealed record Track(string Id, string Name, string Artist, string Album, string? Isrc = null);

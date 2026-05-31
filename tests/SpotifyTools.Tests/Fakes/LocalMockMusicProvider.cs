@@ -7,11 +7,13 @@ namespace SpotifyTools.Tests.Fakes;
 public sealed class LocalMockMusicProvider(
     List<Album>? savedAlbums = null,
     HashSet<string>? likedTrackIds = null,
-    List<Track>? playlistTracks = null)
+    List<Track>? playlistTracks = null,
+    List<Track>? savedTracks = null)
     : IMusicProvider
 {
     private readonly HashSet<string> _likedTrackIds = likedTrackIds ?? [];
     private readonly List<Album> _savedAlbums = savedAlbums ?? [];
+    private readonly List<Track> _savedTracks = savedTracks ?? [];
     private List<Track> _playlistTracks = playlistTracks ?? [];
 
     public IReadOnlyList<Track> PlaylistTracks => _playlistTracks.AsReadOnly();
@@ -35,6 +37,15 @@ public sealed class LocalMockMusicProvider(
                 if (ct.IsCancellationRequested) yield break;
                 yield return track;
             }
+    }
+
+    public async IAsyncEnumerable<Track> GetSavedTracksAsync([EnumeratorCancellation] CancellationToken ct)
+    {
+        foreach (var track in _savedTracks)
+        {
+            if (ct.IsCancellationRequested) yield break;
+            yield return track;
+        }
     }
 
     public async IAsyncEnumerable<Track> GetPlaylistTracksAsync(string playlistId,
