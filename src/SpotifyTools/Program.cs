@@ -21,9 +21,6 @@ builder.Services.AddHybridCache();
 builder.Services.AddDbContext<SpotifyDbContext>(options =>
     options.UseSqlite("Data Source=spotifyqueue.db;Cache=Shared;Journal Mode=WAL;"));
 
-builder.Services.AddScoped<ITrackHistoryRepository, TrackHistoryRepository>();
-builder.Services.AddScoped<IJobRunRepository, JobRunRepository>();
-builder.Services.AddScoped<IAppSettingsRepository, AppSettingsRepository>();
 builder.Services.AddScoped<SyncStep1_SnapshotAndDiff>();
 builder.Services.AddScoped<SyncStep2_AddNewTracks>();
 builder.Services.AddScoped<SyncStep3_GenerateReport>();

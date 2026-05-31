@@ -1,25 +1,25 @@
 using Microsoft.Extensions.Logging;
 using SpotifyTools.Domain;
-using SpotifyTools.Domain.Interfaces;
+using SpotifyTools.Infrastructure.Persistence;
 
 namespace SpotifyTools.Jobs;
 
 public sealed class JobOrchestrator
 {
-    private readonly IJobRunRepository _jobRunRepo;
-    private readonly ILogger<JobOrchestrator> _logger;
+    private readonly SpotifyDbContext _db;
     private readonly SyncStep1_SnapshotAndDiff _step1;
     private readonly SyncStep2_AddNewTracks _step2;
     private readonly SyncStep3_GenerateReport _step3;
+    private readonly ILogger<JobOrchestrator> _logger;
 
     public JobOrchestrator(
-        IJobRunRepository jobRunRepo,
+        SpotifyDbContext db,
         SyncStep1_SnapshotAndDiff step1,
         SyncStep2_AddNewTracks step2,
         SyncStep3_GenerateReport step3,
         ILogger<JobOrchestrator> logger)
     {
-        _jobRunRepo = jobRunRepo;
+        _db = db;
         _step1 = step1;
         _step2 = step2;
         _step3 = step3;
@@ -35,7 +35,8 @@ public sealed class JobOrchestrator
             Status = "running"
         };
 
-        await _jobRunRepo.CreateAsync(jobRun, ct);
+        _db.JobRuns.Add(jobRun);
+        await _db.SaveChangesAsync(ct);
 
         using var _ = _logger.BeginScope(new { JobRunId = jobRun.Id.ToString() });
         Log.StartingJob(_logger, jobRun.Id.ToString());
@@ -47,7 +48,8 @@ public sealed class JobOrchestrator
 
             jobRun.Status = "succeeded";
             jobRun.FinishedAt = DateTime.UtcNow;
-            await _jobRunRepo.UpdateAsync(jobRun, ct);
+            _db.JobRuns.Update(jobRun);
+            await _db.SaveChangesAsync(ct);
 
             await _step3.ExecuteAsync(jobRun, ct);
         }
@@ -56,7 +58,8 @@ public sealed class JobOrchestrator
             jobRun.Status = "partial";
             jobRun.FinishedAt = DateTime.UtcNow;
             jobRun.ErrorMessage = "Cancelled by user";
-            await _jobRunRepo.UpdateAsync(jobRun, ct);
+            _db.JobRuns.Update(jobRun);
+            await _db.SaveChangesAsync(ct);
             await _step3.ExecuteAsync(jobRun, ct);
             throw;
         }
@@ -67,7 +70,8 @@ public sealed class JobOrchestrator
             jobRun.Status = "failed";
             jobRun.FinishedAt = DateTime.UtcNow;
             jobRun.ErrorMessage = ex.Message;
-            await _jobRunRepo.UpdateAsync(jobRun, ct);
+            _db.JobRuns.Update(jobRun);
+            await _db.SaveChangesAsync(ct);
 
             await _step3.ExecuteAsync(jobRun, ct);
             throw;

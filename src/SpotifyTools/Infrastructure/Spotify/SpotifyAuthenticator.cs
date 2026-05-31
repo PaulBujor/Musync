@@ -3,9 +3,11 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SpotifyTools.Domain.Interfaces;
+using SpotifyTools.Infrastructure.Persistence;
 using SpotifyTools.Options;
 
 namespace SpotifyTools.Infrastructure.Spotify;
@@ -26,27 +28,30 @@ public sealed class SpotifyAuthenticator : ISpotifyAuthenticator
         "playlist-read-collaborative"
     ];
 
-    private readonly HttpClient _httpClient;
-    private readonly ILogger<SpotifyAuthenticator> _logger;
-
     private readonly SpotifyOptions _options;
-    private readonly IAppSettingsRepository _settings;
+    private readonly SpotifyDbContext _db;
+    private readonly ILogger<SpotifyAuthenticator> _logger;
+    private readonly HttpClient _httpClient;
 
     public SpotifyAuthenticator(
         IOptions<SpotifyOptions> options,
-        IAppSettingsRepository settings,
+        SpotifyDbContext db,
         ILogger<SpotifyAuthenticator> logger,
         HttpClient httpClient)
     {
         _options = options.Value;
-        _settings = settings;
+        _db = db;
         _logger = logger;
         _httpClient = httpClient;
     }
 
     public async Task EnsureAuthenticatedAsync(CancellationToken ct)
     {
-        var refreshToken = await _settings.GetAsync(RefreshTokenKey, ct);
+        var refreshToken = await _db.AppSettings
+            .Where(x => x.Key == RefreshTokenKey)
+            .Select(x => x.Value)
+            .FirstOrDefaultAsync(ct);
+
         if (!string.IsNullOrEmpty(refreshToken))
             return;
 
@@ -109,11 +114,17 @@ public sealed class SpotifyAuthenticator : ISpotifyAuthenticator
         var response = await _httpClient.PostAsync(TokenUrl, content, ct);
         response.EnsureSuccessStatusCode();
 
-        using var doc =
-            await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
         var refreshToken = doc.RootElement.GetProperty("refresh_token").GetString()!;
 
-        await _settings.SetAsync(RefreshTokenKey, refreshToken, ct);
+        _db.AppSettings.Add(new Domain.AppSetting
+        {
+            Key = RefreshTokenKey,
+            Value = refreshToken,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync(ct);
+
         _logger.LogInformation("Refresh token persisted successfully");
     }
 

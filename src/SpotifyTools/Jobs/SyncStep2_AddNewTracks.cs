@@ -11,33 +11,27 @@ namespace SpotifyTools.Jobs;
 
 public sealed class SyncStep2_AddNewTracks
 {
-    private readonly HybridCache _cache;
-    private readonly SpotifyDbContext _db;
-    private readonly ITrackHistoryRepository _historyRepo;
-    private readonly IJobRunRepository _jobRunRepo;
-    private readonly ILogger<SyncStep2_AddNewTracks> _logger;
     private readonly IMusicProvider _music;
+    private readonly SpotifyDbContext _db;
+    private readonly HybridCache _cache;
     private readonly SpotifyOptions _options;
+    private readonly ILogger<SyncStep2_AddNewTracks> _logger;
 
     public SyncStep2_AddNewTracks(
         IMusicProvider music,
-        ITrackHistoryRepository historyRepo,
-        IJobRunRepository jobRunRepo,
         SpotifyDbContext db,
         HybridCache cache,
         IOptions<SpotifyOptions> options,
         ILogger<SyncStep2_AddNewTracks> logger)
     {
         _music = music;
-        _historyRepo = historyRepo;
-        _jobRunRepo = jobRunRepo;
         _db = db;
         _cache = cache;
         _options = options.Value;
         _logger = logger;
     }
 
-    public async Task ExecuteAsync(JobRun jobRun, CancellationToken ct)
+    public async Task ExecuteAsync(Domain.JobRun jobRun, CancellationToken ct)
     {
         Log.Step2Start(_logger);
 
@@ -48,14 +42,14 @@ public sealed class SyncStep2_AddNewTracks
 
         var historyTrackIds = await _cache.GetOrCreateAsync(
             CacheKeys.TrackHistoryExists,
-            async ct2 => await _historyRepo.GetTrackIdSetAsync(ct2),
+            async ct2 => await _db.TrackHistories.Select(x => x.SpotifyTrackId).Distinct().ToHashSetAsync(ct2),
             cancellationToken: ct);
 
         var processedAlbumIds = await _db.ProcessedAlbums
             .Select(a => a.SpotifyAlbumId)
             .ToHashSetAsync(ct);
 
-        var newTracks = new List<Track>();
+        var newTracks = new List<Domain.Track>();
         var newlyProcessedAlbums = new List<ProcessedAlbum>();
         var albumsProcessed = 0;
         var tracksSkipped = 0;
@@ -71,7 +65,7 @@ public sealed class SyncStep2_AddNewTracks
 
                 Log.ProcessingAlbum(_logger, album.Name, album.Artist);
 
-                var albumTracks = new List<Track>();
+                var albumTracks = new List<Domain.Track>();
                 await foreach (var track in _music.GetAlbumTracksAsync(album.Id, album.Name, ct2))
                 {
                     if (likedTrackIds.Contains(track.Id) || historyTrackIds.Contains(track.Id))
@@ -79,7 +73,6 @@ public sealed class SyncStep2_AddNewTracks
                         Interlocked.Increment(ref tracksSkipped);
                         continue;
                     }
-
                     albumTracks.Add(track);
                 }
 
@@ -119,7 +112,8 @@ public sealed class SyncStep2_AddNewTracks
                 AddedAt = DateTime.UtcNow
             });
 
-            await _historyRepo.AddTrackHistoryAsync(historyEntries, ct);
+            _db.TrackHistories.AddRange(historyEntries);
+            await _db.SaveChangesAsync(ct);
             jobRun.TracksAdded = newTracks.Count;
         }
 
@@ -143,6 +137,7 @@ public sealed class SyncStep2_AddNewTracks
             cancellationToken: ct);
 
         jobRun.QueueSizeAfter = currentPlaylistTrackIds.Count;
-        await _jobRunRepo.UpdateAsync(jobRun, ct);
+        _db.JobRuns.Update(jobRun);
+        await _db.SaveChangesAsync(ct);
     }
 }
