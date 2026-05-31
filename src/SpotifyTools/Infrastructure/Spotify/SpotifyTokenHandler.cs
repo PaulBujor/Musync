@@ -18,7 +18,6 @@ public sealed class SpotifyTokenHandler(
     : DelegatingHandler
 {
     private const string TokenUrl = "https://accounts.spotify.com/api/token";
-    private const string RefreshTokenKey = "spotify:refresh_token";
 
     private readonly SpotifyOptions _options = options.Value;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
@@ -56,21 +55,19 @@ public sealed class SpotifyTokenHandler(
             if (_accessToken != null && DateTime.UtcNow < _tokenExpiry)
                 return;
 
-            var refreshToken = await db.AppSettings
-                .Where(x => x.Key == RefreshTokenKey)
-                .Select(x => x.Value)
+            var existingToken = await db.RefreshTokens
+                .OrderByDescending(x => x.UpdatedAt)
                 .FirstOrDefaultAsync(ct);
 
-            if (string.IsNullOrEmpty(refreshToken))
+            if (existingToken is null)
             {
                 await authenticator.EnsureAuthenticatedAsync(ct);
-                refreshToken = await db.AppSettings
-                    .Where(x => x.Key == RefreshTokenKey)
-                    .Select(x => x.Value)
+                existingToken = await db.RefreshTokens
+                    .OrderByDescending(x => x.UpdatedAt)
                     .FirstOrDefaultAsync(ct);
             }
 
-            await RefreshAccessTokenAsync(refreshToken!, ct);
+            await RefreshAccessTokenAsync(existingToken!.Token, ct);
         }
         finally
         {
@@ -107,19 +104,21 @@ public sealed class SpotifyTokenHandler(
             var newToken = newRefreshToken.GetString()!;
             logger.LogInformation("Spotify rotated refresh token. Persisting immediately...");
 
-            var existing = await db.AppSettings.FirstOrDefaultAsync(x => x.Key == RefreshTokenKey, ct);
+            var existing = await db.RefreshTokens
+                .OrderByDescending(x => x.UpdatedAt)
+                .FirstOrDefaultAsync(ct);
             if (existing is null)
             {
-                db.AppSettings.Add(new Domain.AppSetting
+                db.RefreshTokens.Add(new Domain.RefreshToken
                 {
-                    Key = RefreshTokenKey,
-                    Value = newToken,
+                    Id = Guid.CreateVersion7(),
+                    Token = newToken,
                     UpdatedAt = DateTime.UtcNow
                 });
             }
             else
             {
-                existing.Value = newToken;
+                existing.Token = newToken;
                 existing.UpdatedAt = DateTime.UtcNow;
             }
             await db.SaveChangesAsync(ct);

@@ -22,19 +22,23 @@ public sealed class SyncStep2_AddNewTracks(
     {
         Log.Step2Start(logger);
 
-        var likedTrackIds = await cache.GetOrCreateAsync(
+        var likedTrackIdsTask = cache.GetOrCreateAsync(
             CacheKeys.LikedTracks,
             async ct2 => await music.GetLikedTrackIdsAsync(ct2),
-            cancellationToken: ct);
+            cancellationToken: ct).AsTask();
 
-        var historyTrackIds = await cache.GetOrCreateAsync(
-            CacheKeys.TrackHistoryExists,
-            async ct2 => await db.TrackHistories.Select(x => x.SpotifyTrackId).Distinct().ToHashSetAsync(ct2),
-            cancellationToken: ct);
+        var historyTrackIdsTask = db.TrackHistories
+            .Select(x => x.SpotifyTrackId)
+            .Distinct()
+            .ToHashSetAsync(ct);
 
-        var processedAlbumIds = await db.ProcessedAlbums
+        var processedAlbumIdsTask = db.ProcessedAlbums
             .Select(a => a.SpotifyAlbumId)
             .ToHashSetAsync(ct);
+
+        var likedTrackIds = await likedTrackIdsTask;
+        var historyTrackIds = await historyTrackIdsTask;
+        var processedAlbumIds = await processedAlbumIdsTask;
 
         var newTracks = new List<Domain.Track>();
         var newlyProcessedAlbums = new List<ProcessedAlbum>();
@@ -112,17 +116,9 @@ public sealed class SyncStep2_AddNewTracks(
             await db.SaveChangesAsync(ct);
         }
 
-        var currentPlaylistTrackIds = await cache.GetOrCreateAsync(
-            CacheKeys.QueuePlaylist,
-            async ct2 =>
-            {
-                var ids = new List<string>();
-                await foreach (var track in music.GetPlaylistTracksAsync(_options.QueuePlaylistId, ct2))
-                    ids.Add(track.Id);
-                return ids;
-            },
-            cancellationToken: ct);
-
+        var currentPlaylistTrackIds = new List<string>();
+        await foreach (var track in music.GetPlaylistTracksAsync(_options.QueuePlaylistId, ct))
+            currentPlaylistTrackIds.Add(track.Id);
         jobRun.QueueSizeAfter = currentPlaylistTrackIds.Count;
         db.JobRuns.Update(jobRun);
         await db.SaveChangesAsync(ct);

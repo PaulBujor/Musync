@@ -22,8 +22,6 @@ public sealed class SpotifyAuthenticator(
     private const string RedirectUri = "http://localhost:5000/callback";
     private const string TokenUrl = "https://accounts.spotify.com/api/token";
     private const string AuthUrl = "https://accounts.spotify.com/authorize";
-    private const string RefreshTokenKey = "spotify:refresh_token";
-
     private static readonly string[] Scopes =
     [
         "user-library-read",
@@ -37,12 +35,11 @@ public sealed class SpotifyAuthenticator(
 
     public async Task EnsureAuthenticatedAsync(CancellationToken ct)
     {
-        var refreshToken = await db.AppSettings
-            .Where(x => x.Key == RefreshTokenKey)
-            .Select(x => x.Value)
+        var existingToken = await db.RefreshTokens
+            .OrderByDescending(x => x.UpdatedAt)
             .FirstOrDefaultAsync(ct);
 
-        if (!string.IsNullOrEmpty(refreshToken))
+        if (existingToken is not null)
             return;
 
         logger.LogInformation("No refresh token found. Starting browser-based OAuth flow...");
@@ -107,10 +104,10 @@ public sealed class SpotifyAuthenticator(
         using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
         var refreshToken = doc.RootElement.GetProperty("refresh_token").GetString()!;
 
-        db.AppSettings.Add(new Domain.AppSetting
+        db.RefreshTokens.Add(new Domain.RefreshToken
         {
-            Key = RefreshTokenKey,
-            Value = refreshToken,
+            Id = Guid.CreateVersion7(),
+            Token = refreshToken,
             UpdatedAt = DateTime.UtcNow
         });
         await db.SaveChangesAsync(ct);

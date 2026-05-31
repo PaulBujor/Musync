@@ -1,8 +1,10 @@
+using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using SpotifyTools.Domain;
 using SpotifyTools.Domain.Interfaces;
+using SpotifyTools.Infrastructure.Spotify.Models;
 
 namespace SpotifyTools.Infrastructure.Spotify;
 
@@ -10,114 +12,97 @@ public sealed class SpotifyMusicProvider(HttpClient http) : IMusicProvider
 {
     public async IAsyncEnumerable<Album> GetSavedAlbumsAsync([EnumeratorCancellation] CancellationToken ct)
     {
-        var url = "https://api.spotify.com/v1/me/albums?limit=50";
+        var url = "me/albums?limit=50";
         while (url is not null)
         {
             var response = await http.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
-            using var doc =
-                await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            var root = doc.RootElement;
+            var page = await response.Content
+                .ReadFromJsonAsync(SpotifyApiJsonContext.Default.PagedResponseSavedAlbumItem, ct);
 
-            foreach (var item in root.GetProperty("items").EnumerateArray())
-            {
-                var album = item.GetProperty("album");
-                yield return new Album(
-                    album.GetProperty("id").GetString()!,
-                    album.GetProperty("name").GetString()!,
-                    album.GetProperty("artists")[0].GetProperty("name").GetString()!
-                );
-            }
+            if (page is null)
+                yield break;
 
-            url = root.TryGetProperty("next", out var next) && next.ValueKind == JsonValueKind.String
-                ? next.GetString()
-                : null;
+            foreach (var item in page.Items)
+                yield return new Album(item.Album.Id, item.Album.Name, item.Album.Artists[0].Name);
+
+            url = page.Next;
         }
     }
 
     public async IAsyncEnumerable<Track> GetAlbumTracksAsync(string albumId, string albumName,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var url = $"https://api.spotify.com/v1/albums/{albumId}/tracks?limit=50";
+        var url = $"albums/{albumId}/tracks?limit=50";
         while (url is not null)
         {
             var response = await http.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
-            using var doc =
-                await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            var root = doc.RootElement;
+            var page = await response.Content
+                .ReadFromJsonAsync(SpotifyApiJsonContext.Default.PagedResponseAlbumTrackItem, ct);
 
-            foreach (var item in root.GetProperty("items").EnumerateArray())
-                yield return new Track(
-                    item.GetProperty("id").GetString()!,
-                    item.GetProperty("name").GetString()!,
-                    item.GetProperty("artists")[0].GetProperty("name").GetString()!,
-                    albumName
-                );
+            if (page is null)
+                yield break;
 
-            url = root.TryGetProperty("next", out var next) && next.ValueKind == JsonValueKind.String
-                ? next.GetString()
-                : null;
+            foreach (var item in page.Items)
+                yield return new Track(item.Id, item.Name, item.Artists[0].Name, albumName);
+
+            url = page.Next;
         }
     }
 
     public async IAsyncEnumerable<Track> GetPlaylistTracksAsync(string playlistId,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var url = $"https://api.spotify.com/v1/playlists/{playlistId}/tracks?limit=50";
+        var url = $"playlists/{playlistId}/tracks?limit=50";
         while (url is not null)
         {
             var response = await http.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
-            using var doc =
-                await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            var root = doc.RootElement;
+            var page = await response.Content
+                .ReadFromJsonAsync(SpotifyApiJsonContext.Default.PagedResponsePlaylistTrackItem, ct);
 
-            foreach (var item in root.GetProperty("items").EnumerateArray())
+            if (page is null)
+                yield break;
+
+            foreach (var item in page.Items)
             {
-                var track = item.GetProperty("track");
-                if (track.ValueKind == JsonValueKind.Null)
+                if (item.Track is null)
                     continue;
 
                 yield return new Track(
-                    track.GetProperty("id").GetString()!,
-                    track.GetProperty("name").GetString()!,
-                    track.GetProperty("artists")[0].GetProperty("name").GetString()!,
-                    track.GetProperty("album").GetProperty("name").GetString()!
-                );
+                    item.Track.Id,
+                    item.Track.Name,
+                    item.Track.Artists[0].Name,
+                    item.Track.Album.Name);
             }
 
-            url = root.TryGetProperty("next", out var next) && next.ValueKind == JsonValueKind.String
-                ? next.GetString()
-                : null;
+            url = page.Next;
         }
     }
 
     public async Task<HashSet<string>> GetLikedTrackIdsAsync(CancellationToken ct)
     {
         var ids = new HashSet<string>();
-        var url = "https://api.spotify.com/v1/me/tracks?limit=50";
+        var url = "me/tracks?limit=50";
         while (url is not null)
         {
             var response = await http.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
-            using var doc =
-                await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            var root = doc.RootElement;
+            var page = await response.Content
+                .ReadFromJsonAsync(SpotifyApiJsonContext.Default.PagedResponseLikedTrackItem, ct);
 
-            foreach (var item in root.GetProperty("items").EnumerateArray())
-            {
-                var track = item.GetProperty("track");
-                ids.Add(track.GetProperty("id").GetString()!);
-            }
+            if (page is null)
+                break;
 
-            url = root.TryGetProperty("next", out var next) && next.ValueKind == JsonValueKind.String
-                ? next.GetString()
-                : null;
+            foreach (var item in page.Items)
+                ids.Add(item.Track.Id);
+
+            url = page.Next;
         }
 
         return ids;
@@ -160,7 +145,7 @@ public sealed class SpotifyMusicProvider(HttpClient http) : IMusicProvider
     {
         var payload = new { uris = uris.Select(u => $"spotify:track:{u}").ToArray() };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var response = await http.PostAsync($"https://api.spotify.com/v1/playlists/{playlistId}/tracks", content, ct);
+        var response = await http.PostAsync($"playlists/{playlistId}/tracks", content, ct);
         response.EnsureSuccessStatusCode();
     }
 
@@ -169,7 +154,7 @@ public sealed class SpotifyMusicProvider(HttpClient http) : IMusicProvider
         var tracks = uris.Select(u => new { uri = $"spotify:track:{u}" }).ToArray();
         var payload = new { tracks };
         var request =
-            new HttpRequestMessage(HttpMethod.Delete, $"https://api.spotify.com/v1/playlists/{playlistId}/tracks")
+            new HttpRequestMessage(HttpMethod.Delete, $"playlists/{playlistId}/tracks")
             {
                 Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
             };

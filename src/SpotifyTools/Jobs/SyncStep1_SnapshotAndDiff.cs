@@ -21,41 +21,36 @@ public sealed class SyncStep1_SnapshotAndDiff(
     {
         Log.Step1Start(logger);
 
-        var currentPlaylistTracks = await cache.GetOrCreateAsync(
-            CacheKeys.QueuePlaylist,
-            async ct2 =>
-            {
-                var tracks = new List<Domain.Track>();
-                await foreach (var track in music.GetPlaylistTracksAsync(_options.QueuePlaylistId, ct2))
-                    tracks.Add(track);
-                return tracks;
-            },
-            cancellationToken: ct);
-
-        var likedTrackIds = await cache.GetOrCreateAsync(
+        var likedTrackIdsTask = cache.GetOrCreateAsync(
             CacheKeys.LikedTracks,
             async ct2 => await music.GetLikedTrackIdsAsync(ct2),
-            cancellationToken: ct);
+            cancellationToken: ct).AsTask();
+
+        var currentPlaylistTracks = await FetchPlaylistAsync(ct);
+        var likedTrackIds = await likedTrackIdsTask;
 
         var currentTrackIds = currentPlaylistTracks.Select(t => t.Id).ToHashSet();
 
-        var likedInPlaylist = currentTrackIds.Where(id => likedTrackIds.Contains(id)).ToList();
+        var likedInPlaylist = currentTrackIds.Where(likedTrackIds.Contains).ToList();
         if (likedInPlaylist.Count > 0)
         {
             Log.RemovingLikedTracks(logger, likedInPlaylist.Count);
             await music.RemoveTracksFromPlaylistAsync(_options.QueuePlaylistId, likedInPlaylist, ct);
 
             var now = DateTime.UtcNow;
-            foreach (var id in likedInPlaylist)
+            const int batchSize = 500;
+            var entries = new List<Domain.TrackHistory>();
+            foreach (var batch in likedInPlaylist.Chunk(batchSize))
             {
-                var entries = await db.TrackHistories
-                    .Where(x => x.SpotifyTrackId == id && x.RemovedAt == null)
+                var batchEntries = await db.TrackHistories
+                    .Where(x => batch.Contains(x.SpotifyTrackId) && x.RemovedAt == null)
                     .ToListAsync(ct);
-                foreach (var entry in entries)
-                {
-                    entry.RemovedAt = now;
-                    entry.RemovalReason = "liked";
-                }
+                entries.AddRange(batchEntries);
+            }
+            foreach (var entry in entries)
+            {
+                entry.RemovedAt = now;
+                entry.RemovalReason = "liked";
             }
             await db.SaveChangesAsync(ct);
 
@@ -83,5 +78,13 @@ public sealed class SyncStep1_SnapshotAndDiff(
         jobRun.QueueSizeAfter = currentTrackIds.Count - likedInPlaylist.Count;
         db.JobRuns.Update(jobRun);
         await db.SaveChangesAsync(ct);
+    }
+
+    private async Task<List<Domain.Track>> FetchPlaylistAsync(CancellationToken ct)
+    {
+        var tracks = new List<Domain.Track>();
+        await foreach (var track in music.GetPlaylistTracksAsync(_options.QueuePlaylistId, ct))
+            tracks.Add(track);
+        return tracks;
     }
 }

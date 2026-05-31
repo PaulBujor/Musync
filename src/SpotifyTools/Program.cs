@@ -29,7 +29,10 @@ builder.Services.AddScoped<JobOrchestrator>();
 builder.Services.AddSingleton<ISpotifyAuthenticator, SpotifyAuthenticator>();
 builder.Services.AddTransient<SpotifyTokenHandler>();
 builder.Services
-    .AddHttpClient<IMusicProvider, SpotifyMusicProvider>()
+    .AddHttpClient<IMusicProvider, SpotifyMusicProvider>(client =>
+    {
+        client.BaseAddress = new Uri("https://api.spotify.com/v1/");
+    })
     .AddHttpMessageHandler<SpotifyTokenHandler>()
     .AddStandardResilienceHandler(options =>
     {
