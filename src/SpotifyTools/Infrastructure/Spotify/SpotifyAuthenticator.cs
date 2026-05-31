@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SpotifyTools.Domain.Interfaces;
 using SpotifyTools.Options;
 
@@ -32,12 +33,12 @@ public sealed class SpotifyAuthenticator : ISpotifyAuthenticator
     private readonly HttpClient _httpClient;
 
     public SpotifyAuthenticator(
-        SpotifyOptions options,
+        IOptions<SpotifyOptions> options,
         IAppSettingsRepository settings,
         ILogger<SpotifyAuthenticator> logger,
         HttpClient httpClient)
     {
-        _options = options;
+        _options = options.Value;
         _settings = settings;
         _logger = logger;
         _httpClient = httpClient;

@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SpotifyTools.Domain.Interfaces;
 using SpotifyTools.Options;
 
@@ -22,12 +23,12 @@ public sealed class SpotifyTokenHandler : DelegatingHandler
     private DateTime _tokenExpiry = DateTime.MinValue;
 
     public SpotifyTokenHandler(
-        SpotifyOptions options,
+        IOptions<SpotifyOptions> options,
         ISpotifyAuthenticator authenticator,
         IAppSettingsRepository settings,
         ILogger<SpotifyTokenHandler> logger)
     {
-        _options = options;
+        _options = options.Value;
         _authenticator = authenticator;
         _settings = settings;
         _logger = logger;
