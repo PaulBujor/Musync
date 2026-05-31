@@ -10,31 +10,21 @@ using SpotifyTools.Options;
 
 namespace SpotifyTools.Infrastructure.Spotify;
 
-public sealed class SpotifyTokenHandler : DelegatingHandler
+public sealed class SpotifyTokenHandler(
+    IOptions<SpotifyOptions> options,
+    ISpotifyAuthenticator authenticator,
+    SpotifyDbContext db,
+    ILogger<SpotifyTokenHandler> logger)
+    : DelegatingHandler
 {
     private const string TokenUrl = "https://accounts.spotify.com/api/token";
     private const string RefreshTokenKey = "spotify:refresh_token";
 
-    private readonly SpotifyOptions _options;
-    private readonly ISpotifyAuthenticator _authenticator;
-    private readonly SpotifyDbContext _db;
-    private readonly ILogger<SpotifyTokenHandler> _logger;
+    private readonly SpotifyOptions _options = options.Value;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
     private string? _accessToken;
     private DateTime _tokenExpiry = DateTime.MinValue;
-
-    public SpotifyTokenHandler(
-        IOptions<SpotifyOptions> options,
-        ISpotifyAuthenticator authenticator,
-        SpotifyDbContext db,
-        ILogger<SpotifyTokenHandler> logger)
-    {
-        _options = options.Value;
-        _authenticator = authenticator;
-        _db = db;
-        _logger = logger;
-    }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
@@ -45,7 +35,7 @@ public sealed class SpotifyTokenHandler : DelegatingHandler
 
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
-            _logger.LogWarning("Received 401. Forcing token refresh...");
+            logger.LogWarning("Received 401. Forcing token refresh...");
             _accessToken = null;
             await EnsureTokenAsync(ct);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
@@ -66,15 +56,15 @@ public sealed class SpotifyTokenHandler : DelegatingHandler
             if (_accessToken != null && DateTime.UtcNow < _tokenExpiry)
                 return;
 
-            var refreshToken = await _db.AppSettings
+            var refreshToken = await db.AppSettings
                 .Where(x => x.Key == RefreshTokenKey)
                 .Select(x => x.Value)
                 .FirstOrDefaultAsync(ct);
 
             if (string.IsNullOrEmpty(refreshToken))
             {
-                await _authenticator.EnsureAuthenticatedAsync(ct);
-                refreshToken = await _db.AppSettings
+                await authenticator.EnsureAuthenticatedAsync(ct);
+                refreshToken = await db.AppSettings
                     .Where(x => x.Key == RefreshTokenKey)
                     .Select(x => x.Value)
                     .FirstOrDefaultAsync(ct);
@@ -115,12 +105,12 @@ public sealed class SpotifyTokenHandler : DelegatingHandler
         if (root.TryGetProperty("refresh_token", out var newRefreshToken))
         {
             var newToken = newRefreshToken.GetString()!;
-            _logger.LogInformation("Spotify rotated refresh token. Persisting immediately...");
+            logger.LogInformation("Spotify rotated refresh token. Persisting immediately...");
 
-            var existing = await _db.AppSettings.FirstOrDefaultAsync(x => x.Key == RefreshTokenKey, ct);
+            var existing = await db.AppSettings.FirstOrDefaultAsync(x => x.Key == RefreshTokenKey, ct);
             if (existing is null)
             {
-                _db.AppSettings.Add(new Domain.AppSetting
+                db.AppSettings.Add(new Domain.AppSetting
                 {
                     Key = RefreshTokenKey,
                     Value = newToken,
@@ -132,7 +122,7 @@ public sealed class SpotifyTokenHandler : DelegatingHandler
                 existing.Value = newToken;
                 existing.UpdatedAt = DateTime.UtcNow;
             }
-            await _db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(ct);
         }
     }
 }

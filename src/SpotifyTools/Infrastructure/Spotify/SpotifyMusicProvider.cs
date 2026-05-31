@@ -6,21 +6,14 @@ using SpotifyTools.Domain.Interfaces;
 
 namespace SpotifyTools.Infrastructure.Spotify;
 
-public sealed class SpotifyMusicProvider : IMusicProvider
+public sealed class SpotifyMusicProvider(HttpClient http) : IMusicProvider
 {
-    private readonly HttpClient _http;
-
-    public SpotifyMusicProvider(HttpClient http)
-    {
-        _http = http;
-    }
-
     public async IAsyncEnumerable<Album> GetSavedAlbumsAsync([EnumeratorCancellation] CancellationToken ct)
     {
         var url = "https://api.spotify.com/v1/me/albums?limit=50";
         while (url is not null)
         {
-            var response = await _http.GetAsync(url, ct);
+            var response = await http.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
             using var doc =
@@ -49,7 +42,7 @@ public sealed class SpotifyMusicProvider : IMusicProvider
         var url = $"https://api.spotify.com/v1/albums/{albumId}/tracks?limit=50";
         while (url is not null)
         {
-            var response = await _http.GetAsync(url, ct);
+            var response = await http.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
             using var doc =
@@ -76,7 +69,7 @@ public sealed class SpotifyMusicProvider : IMusicProvider
         var url = $"https://api.spotify.com/v1/playlists/{playlistId}/tracks?limit=50";
         while (url is not null)
         {
-            var response = await _http.GetAsync(url, ct);
+            var response = await http.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
             using var doc =
@@ -109,7 +102,7 @@ public sealed class SpotifyMusicProvider : IMusicProvider
         var url = "https://api.spotify.com/v1/me/tracks?limit=50";
         while (url is not null)
         {
-            var response = await _http.GetAsync(url, ct);
+            var response = await http.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
             using var doc =
@@ -167,7 +160,7 @@ public sealed class SpotifyMusicProvider : IMusicProvider
     {
         var payload = new { uris = uris.Select(u => $"spotify:track:{u}").ToArray() };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var response = await _http.PostAsync($"https://api.spotify.com/v1/playlists/{playlistId}/tracks", content, ct);
+        var response = await http.PostAsync($"https://api.spotify.com/v1/playlists/{playlistId}/tracks", content, ct);
         response.EnsureSuccessStatusCode();
     }
 
@@ -180,7 +173,7 @@ public sealed class SpotifyMusicProvider : IMusicProvider
             {
                 Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
             };
-        var response = await _http.SendAsync(request, ct);
+        var response = await http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
     }
 }

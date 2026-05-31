@@ -12,7 +12,12 @@ using SpotifyTools.Options;
 
 namespace SpotifyTools.Infrastructure.Spotify;
 
-public sealed class SpotifyAuthenticator : ISpotifyAuthenticator
+public sealed class SpotifyAuthenticator(
+    IOptions<SpotifyOptions> options,
+    SpotifyDbContext db,
+    ILogger<SpotifyAuthenticator> logger,
+    HttpClient httpClient)
+    : ISpotifyAuthenticator
 {
     private const string RedirectUri = "http://localhost:5000/callback";
     private const string TokenUrl = "https://accounts.spotify.com/api/token";
@@ -28,26 +33,11 @@ public sealed class SpotifyAuthenticator : ISpotifyAuthenticator
         "playlist-read-collaborative"
     ];
 
-    private readonly SpotifyOptions _options;
-    private readonly SpotifyDbContext _db;
-    private readonly ILogger<SpotifyAuthenticator> _logger;
-    private readonly HttpClient _httpClient;
-
-    public SpotifyAuthenticator(
-        IOptions<SpotifyOptions> options,
-        SpotifyDbContext db,
-        ILogger<SpotifyAuthenticator> logger,
-        HttpClient httpClient)
-    {
-        _options = options.Value;
-        _db = db;
-        _logger = logger;
-        _httpClient = httpClient;
-    }
+    private readonly SpotifyOptions _options = options.Value;
 
     public async Task EnsureAuthenticatedAsync(CancellationToken ct)
     {
-        var refreshToken = await _db.AppSettings
+        var refreshToken = await db.AppSettings
             .Where(x => x.Key == RefreshTokenKey)
             .Select(x => x.Value)
             .FirstOrDefaultAsync(ct);
@@ -55,7 +45,7 @@ public sealed class SpotifyAuthenticator : ISpotifyAuthenticator
         if (!string.IsNullOrEmpty(refreshToken))
             return;
 
-        _logger.LogInformation("No refresh token found. Starting browser-based OAuth flow...");
+        logger.LogInformation("No refresh token found. Starting browser-based OAuth flow...");
 
         var (codeVerifier, codeChallenge) = GeneratePkcePair();
         var state = Guid.NewGuid().ToString("N");
@@ -72,7 +62,7 @@ public sealed class SpotifyAuthenticator : ISpotifyAuthenticator
                       $"&code_challenge_method=S256" +
                       $"&code_challenge={codeChallenge}";
 
-        _logger.LogInformation("Opening browser for Spotify authorization...");
+        logger.LogInformation("Opening browser for Spotify authorization...");
         Process.Start(new ProcessStartInfo
         {
             FileName = authUrl,
@@ -111,21 +101,21 @@ public sealed class SpotifyAuthenticator : ISpotifyAuthenticator
             new KeyValuePair<string, string>("code_verifier", codeVerifier)
         ]);
 
-        var response = await _httpClient.PostAsync(TokenUrl, content, ct);
+        var response = await httpClient.PostAsync(TokenUrl, content, ct);
         response.EnsureSuccessStatusCode();
 
         using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
         var refreshToken = doc.RootElement.GetProperty("refresh_token").GetString()!;
 
-        _db.AppSettings.Add(new Domain.AppSetting
+        db.AppSettings.Add(new Domain.AppSetting
         {
             Key = RefreshTokenKey,
             Value = refreshToken,
             UpdatedAt = DateTime.UtcNow
         });
-        await _db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Refresh token persisted successfully");
+        logger.LogInformation("Refresh token persisted successfully");
     }
 
     private static (string verifier, string challenge) GeneratePkcePair()

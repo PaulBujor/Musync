@@ -3,33 +3,26 @@ using SpotifyTools.Domain;
 
 namespace SpotifyTools.Jobs;
 
-public sealed class SyncStep3_GenerateReport
+public sealed class SyncStep3_GenerateReport(ILogger<SyncStep3_GenerateReport> logger)
 {
-    private readonly ILogger<SyncStep3_GenerateReport> _logger;
-
-    public SyncStep3_GenerateReport(ILogger<SyncStep3_GenerateReport> logger)
-    {
-        _logger = logger;
-    }
-
     public Task ExecuteAsync(JobRun jobRun, CancellationToken ct)
     {
         var duration = jobRun.FinishedAt.HasValue
             ? jobRun.FinishedAt.Value - jobRun.StartedAt
             : TimeSpan.Zero;
 
-        Log.SyncCompleteHeader(_logger);
-        Log.SyncDuration(_logger, duration.ToString(@"hh\:mm\:ss"));
-        Log.SyncStatus(_logger, jobRun.Status);
-        Log.TracksAdded(_logger, jobRun.TracksAdded);
-        Log.TracksRemoved(_logger,
+        Log.SyncCompleteHeader(logger);
+        Log.SyncDuration(logger, duration.ToString(@"hh\:mm\:ss"));
+        Log.SyncStatus(logger, jobRun.Status);
+        Log.TracksAdded(logger, jobRun.TracksAdded);
+        Log.TracksRemoved(logger,
             jobRun.TracksRemovedLiked + jobRun.TracksRemovedManual,
             jobRun.TracksRemovedLiked,
             jobRun.TracksRemovedManual);
-        Log.TracksSkipped(_logger, jobRun.TracksSkipped);
-        Log.NewAlbumsSeen(_logger, jobRun.NewAlbumsEncountered);
-        Log.QueueSize(_logger, jobRun.QueueSizeAfter);
-        Log.SyncCompleteFooter(_logger);
+        Log.TracksSkipped(logger, jobRun.TracksSkipped);
+        Log.NewAlbumsSeen(logger, jobRun.NewAlbumsEncountered);
+        Log.QueueSize(logger, jobRun.QueueSizeAfter);
+        Log.SyncCompleteFooter(logger);
 
         return Task.CompletedTask;
     }

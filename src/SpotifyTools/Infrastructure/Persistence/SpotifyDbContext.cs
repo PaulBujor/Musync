@@ -3,12 +3,8 @@ using SpotifyTools.Domain;
 
 namespace SpotifyTools.Infrastructure.Persistence;
 
-public sealed class SpotifyDbContext : DbContext
+public sealed class SpotifyDbContext(DbContextOptions<SpotifyDbContext> options) : DbContext(options)
 {
-    public SpotifyDbContext(DbContextOptions<SpotifyDbContext> options) : base(options)
-    {
-    }
-
     public DbSet<JobRun> JobRuns => Set<JobRun>();
     public DbSet<TrackHistory> TrackHistories => Set<TrackHistory>();
     public DbSet<ProcessedAlbum> ProcessedAlbums => Set<ProcessedAlbum>();

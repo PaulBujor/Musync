@@ -4,21 +4,15 @@ using SpotifyTools.Domain.Interfaces;
 
 namespace SpotifyTools.Tests.Fakes;
 
-public sealed class LocalMockMusicProvider : IMusicProvider
+public sealed class LocalMockMusicProvider(
+    List<Album>? savedAlbums = null,
+    HashSet<string>? likedTrackIds = null,
+    List<Track>? playlistTracks = null)
+    : IMusicProvider
 {
-    private readonly HashSet<string> _likedTrackIds;
-    private readonly List<Album> _savedAlbums;
-    private List<Track> _playlistTracks;
-
-    public LocalMockMusicProvider(
-        List<Album>? savedAlbums = null,
-        HashSet<string>? likedTrackIds = null,
-        List<Track>? playlistTracks = null)
-    {
-        _savedAlbums = savedAlbums ?? [];
-        _likedTrackIds = likedTrackIds ?? [];
-        _playlistTracks = playlistTracks ?? [];
-    }
+    private readonly HashSet<string> _likedTrackIds = likedTrackIds ?? [];
+    private readonly List<Album> _savedAlbums = savedAlbums ?? [];
+    private List<Track> _playlistTracks = playlistTracks ?? [];
 
     public IReadOnlyList<Track> PlaylistTracks => _playlistTracks.AsReadOnly();
 
