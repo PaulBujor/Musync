@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SpotifyTools.Domain;
 using SpotifyTools.Domain.Interfaces;
 using SpotifyTools.Infrastructure.Persistence;
@@ -24,7 +25,7 @@ public sealed class SyncStep2_AddNewTracks
         IJobRunRepository jobRunRepo,
         SpotifyDbContext db,
         HybridCache cache,
-        SpotifyOptions options,
+        IOptions<SpotifyOptions> options,
         ILogger<SyncStep2_AddNewTracks> logger)
     {
         _music = music;
@@ -32,7 +33,7 @@ public sealed class SyncStep2_AddNewTracks
         _jobRunRepo = jobRunRepo;
         _db = db;
         _cache = cache;
-        _options = options;
+        _options = options.Value;
         _logger = logger;
     }
 

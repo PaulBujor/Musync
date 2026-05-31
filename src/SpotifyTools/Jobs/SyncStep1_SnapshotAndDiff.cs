@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SpotifyTools.Domain.Interfaces;
 using SpotifyTools.Options;
 
@@ -19,14 +20,14 @@ public sealed class SyncStep1_SnapshotAndDiff
         ITrackHistoryRepository historyRepo,
         IJobRunRepository jobRunRepo,
         HybridCache cache,
-        SpotifyOptions options,
+        IOptions<SpotifyOptions> options,
         ILogger<SyncStep1_SnapshotAndDiff> logger)
     {
         _music = music;
         _historyRepo = historyRepo;
         _jobRunRepo = jobRunRepo;
         _cache = cache;
-        _options = options;
+        _options = options.Value;
         _logger = logger;
     }
 
