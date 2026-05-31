@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -12,12 +13,12 @@ public sealed class SpotifyTokenHandler : DelegatingHandler
 {
     private const string TokenUrl = "https://accounts.spotify.com/api/token";
     private const string RefreshTokenKey = "spotify:refresh_token";
+    private readonly ISpotifyAuthenticator _authenticator;
+    private readonly ILogger<SpotifyTokenHandler> _logger;
 
     private readonly SpotifyOptions _options;
-    private readonly ISpotifyAuthenticator _authenticator;
-    private readonly IAppSettingsRepository _settings;
-    private readonly ILogger<SpotifyTokenHandler> _logger;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
+    private readonly IAppSettingsRepository _settings;
 
     private string? _accessToken;
     private DateTime _tokenExpiry = DateTime.MinValue;
@@ -41,7 +42,7 @@ public sealed class SpotifyTokenHandler : DelegatingHandler
 
         var response = await base.SendAsync(request, ct);
 
-        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
             _logger.LogWarning("Received 401. Forcing token refresh...");
             _accessToken = null;

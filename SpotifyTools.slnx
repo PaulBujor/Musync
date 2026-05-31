@@ -1,8 +1,8 @@
 <Solution>
-  <Folder Name="/src/">
-    <Project Path="src/SpotifyTools/SpotifyTools.csproj" />
-  </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/SpotifyTools.Tests/SpotifyTools.Tests.csproj" />
-  </Folder>
+    <Folder Name="/src/">
+        <Project Path="src/SpotifyTools/SpotifyTools.csproj"/>
+    </Folder>
+    <Folder Name="/tests/">
+        <Project Path="tests/SpotifyTools.Tests/SpotifyTools.Tests.csproj"/>
+    </Folder>
 </Solution>

@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Net;
-using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -27,10 +26,11 @@ public sealed class SpotifyAuthenticator : ISpotifyAuthenticator
         "playlist-read-collaborative"
     ];
 
+    private readonly HttpClient _httpClient;
+    private readonly ILogger<SpotifyAuthenticator> _logger;
+
     private readonly SpotifyOptions _options;
     private readonly IAppSettingsRepository _settings;
-    private readonly ILogger<SpotifyAuthenticator> _logger;
-    private readonly HttpClient _httpClient;
 
     public SpotifyAuthenticator(
         IOptions<SpotifyOptions> options,
@@ -109,7 +109,8 @@ public sealed class SpotifyAuthenticator : ISpotifyAuthenticator
         var response = await _httpClient.PostAsync(TokenUrl, content, ct);
         response.EnsureSuccessStatusCode();
 
-        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        using var doc =
+            await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
         var refreshToken = doc.RootElement.GetProperty("refresh_token").GetString()!;
 
         await _settings.SetAsync(RefreshTokenKey, refreshToken, ct);
@@ -142,5 +143,4 @@ public sealed class SpotifyAuthenticator : ISpotifyAuthenticator
         await context.Response.OutputStream.WriteAsync(bytes);
         context.Response.OutputStream.Close();
     }
-
 }

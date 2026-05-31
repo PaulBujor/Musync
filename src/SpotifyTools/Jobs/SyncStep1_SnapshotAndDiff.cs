@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SpotifyTools.Domain;
 using SpotifyTools.Domain.Interfaces;
 using SpotifyTools.Options;
 
@@ -8,12 +9,12 @@ namespace SpotifyTools.Jobs;
 
 public sealed class SyncStep1_SnapshotAndDiff
 {
-    private readonly IMusicProvider _music;
+    private readonly HybridCache _cache;
     private readonly ITrackHistoryRepository _historyRepo;
     private readonly IJobRunRepository _jobRunRepo;
-    private readonly HybridCache _cache;
-    private readonly SpotifyOptions _options;
     private readonly ILogger<SyncStep1_SnapshotAndDiff> _logger;
+    private readonly IMusicProvider _music;
+    private readonly SpotifyOptions _options;
 
     public SyncStep1_SnapshotAndDiff(
         IMusicProvider music,
@@ -31,7 +32,7 @@ public sealed class SyncStep1_SnapshotAndDiff
         _logger = logger;
     }
 
-    public async Task ExecuteAsync(Domain.JobRun jobRun, CancellationToken ct)
+    public async Task ExecuteAsync(JobRun jobRun, CancellationToken ct)
     {
         Log.Step1Start(_logger);
 
@@ -39,7 +40,7 @@ public sealed class SyncStep1_SnapshotAndDiff
             CacheKeys.QueuePlaylist,
             async ct2 =>
             {
-                var tracks = new List<Domain.Track>();
+                var tracks = new List<Track>();
                 await foreach (var track in _music.GetPlaylistTracksAsync(_options.QueuePlaylistId, ct2))
                     tracks.Add(track);
                 return tracks;

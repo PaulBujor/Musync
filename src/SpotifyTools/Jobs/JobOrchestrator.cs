@@ -7,10 +7,10 @@ namespace SpotifyTools.Jobs;
 public sealed class JobOrchestrator
 {
     private readonly IJobRunRepository _jobRunRepo;
+    private readonly ILogger<JobOrchestrator> _logger;
     private readonly SyncStep1_SnapshotAndDiff _step1;
     private readonly SyncStep2_AddNewTracks _step2;
     private readonly SyncStep4_GenerateReport _step4;
-    private readonly ILogger<JobOrchestrator> _logger;
 
     public JobOrchestrator(
         IJobRunRepository jobRunRepo,

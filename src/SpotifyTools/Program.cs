@@ -1,16 +1,14 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using System.CommandLine;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
 using SpotifyTools.Domain;
 using SpotifyTools.Domain.Interfaces;
 using SpotifyTools.Infrastructure.Persistence;
 using SpotifyTools.Infrastructure.Spotify;
 using SpotifyTools.Jobs;
 using SpotifyTools.Options;
-using System.CommandLine;
-
 
 var builder = Host.CreateApplicationBuilder(args);
 

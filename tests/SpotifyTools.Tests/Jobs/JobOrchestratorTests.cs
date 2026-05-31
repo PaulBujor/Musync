@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -89,7 +88,7 @@ public sealed class JobOrchestratorTests
             new("album-a", "Album A", "Artist A")
         };
 
-        var sp = BuildTestServices(savedAlbums: albums);
+        var sp = BuildTestServices(albums);
         var orchestrator = sp.GetRequiredService<JobOrchestrator>();
         await orchestrator.RunAsync(CancellationToken.None);
 
@@ -126,8 +125,8 @@ public sealed class JobOrchestratorTests
         var likedTrackIds = new HashSet<string> { "track-a1" };
 
         var sp = BuildTestServices(
-            savedAlbums: albums,
-            likedTrackIds: likedTrackIds);
+            albums,
+            likedTrackIds);
 
         var orchestrator = sp.GetRequiredService<JobOrchestrator>();
         await orchestrator.RunAsync(CancellationToken.None);
@@ -162,7 +161,7 @@ public sealed class JobOrchestratorTests
             new("album-a", "Album A", "Artist A")
         };
 
-        var sp = BuildTestServices(savedAlbums: albums);
+        var sp = BuildTestServices(albums);
         var db = sp.GetRequiredService<SpotifyDbContext>();
         db.ProcessedAlbums.Add(new ProcessedAlbum
         {
@@ -201,7 +200,7 @@ public sealed class JobOrchestratorTests
             new("album-a", "Album A", "Artist A")
         };
 
-        var sp = BuildTestServices(savedAlbums: albums);
+        var sp = BuildTestServices(albums);
         var historyRepo = sp.GetRequiredService<ITrackHistoryRepository>();
         await historyRepo.AddTrackHistoryAsync(
         [
@@ -251,9 +250,9 @@ public sealed class JobOrchestratorTests
         };
 
         var sp = BuildTestServices(
-            savedAlbums: [],
-            likedTrackIds: likedTrackIds,
-            playlistTracks: playlistTracks);
+            [],
+            likedTrackIds,
+            playlistTracks);
 
         var orchestrator = sp.GetRequiredService<JobOrchestrator>();
         await orchestrator.RunAsync(CancellationToken.None);

@@ -16,7 +16,8 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Information, Message = "Tracks added:      {Count}")]
     public static partial void TracksAdded(ILogger logger, int count);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Tracks removed:    {Total} ({Liked} liked, {Manual} manual)")]
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Tracks removed:    {Total} ({Liked} liked, {Manual} manual)")]
     public static partial void TracksRemoved(ILogger logger, int total, int liked, int manual);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Tracks skipped:    {Count}")]

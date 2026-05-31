@@ -6,11 +6,9 @@ namespace SpotifyTools.Tests.Fakes;
 
 public sealed class LocalMockMusicProvider : IMusicProvider
 {
-    private readonly List<Album> _savedAlbums;
     private readonly HashSet<string> _likedTrackIds;
+    private readonly List<Album> _savedAlbums;
     private List<Track> _playlistTracks;
-
-    public IReadOnlyList<Track> PlaylistTracks => _playlistTracks.AsReadOnly();
 
     public LocalMockMusicProvider(
         List<Album>? savedAlbums = null,
@@ -22,6 +20,8 @@ public sealed class LocalMockMusicProvider : IMusicProvider
         _playlistTracks = playlistTracks ?? [];
     }
 
+    public IReadOnlyList<Track> PlaylistTracks => _playlistTracks.AsReadOnly();
+
     public async IAsyncEnumerable<Album> GetSavedAlbumsAsync([EnumeratorCancellation] CancellationToken ct)
     {
         foreach (var album in _savedAlbums)
@@ -31,20 +31,20 @@ public sealed class LocalMockMusicProvider : IMusicProvider
         }
     }
 
-    public async IAsyncEnumerable<Track> GetAlbumTracksAsync(string albumId, string albumName, [EnumeratorCancellation] CancellationToken ct)
+    public async IAsyncEnumerable<Track> GetAlbumTracksAsync(string albumId, string albumName,
+        [EnumeratorCancellation] CancellationToken ct)
     {
         var album = _savedAlbums.FirstOrDefault(a => a.Id == albumId);
         if (album != null)
-        {
             foreach (var track in AlbumTracks(albumId, albumName))
             {
                 if (ct.IsCancellationRequested) yield break;
                 yield return track;
             }
-        }
     }
 
-    public async IAsyncEnumerable<Track> GetPlaylistTracksAsync(string playlistId, [EnumeratorCancellation] CancellationToken ct)
+    public async IAsyncEnumerable<Track> GetPlaylistTracksAsync(string playlistId,
+        [EnumeratorCancellation] CancellationToken ct)
     {
         foreach (var track in _playlistTracks)
         {
@@ -79,16 +79,16 @@ public sealed class LocalMockMusicProvider : IMusicProvider
             "album-a" =>
             [
                 new Track("track-a1", "Track A1", "Artist A", albumName),
-                new Track("track-a2", "Track A2", "Artist A", albumName),
+                new Track("track-a2", "Track A2", "Artist A", albumName)
             ],
             "album-b" =>
             [
                 new Track("track-b1", "Track B1", "Artist B", albumName),
-                new Track("track-b2", "Track B2", "Artist B", albumName),
+                new Track("track-b2", "Track B2", "Artist B", albumName)
             ],
             "album-c" =>
             [
-                new Track("track-c1", "Track C1", "Artist C", albumName),
+                new Track("track-c1", "Track C1", "Artist C", albumName)
             ],
             _ => []
         };

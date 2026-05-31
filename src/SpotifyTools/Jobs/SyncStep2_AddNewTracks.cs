@@ -11,13 +11,13 @@ namespace SpotifyTools.Jobs;
 
 public sealed class SyncStep2_AddNewTracks
 {
-    private readonly IMusicProvider _music;
+    private readonly HybridCache _cache;
+    private readonly SpotifyDbContext _db;
     private readonly ITrackHistoryRepository _historyRepo;
     private readonly IJobRunRepository _jobRunRepo;
-    private readonly SpotifyDbContext _db;
-    private readonly HybridCache _cache;
-    private readonly SpotifyOptions _options;
     private readonly ILogger<SyncStep2_AddNewTracks> _logger;
+    private readonly IMusicProvider _music;
+    private readonly SpotifyOptions _options;
 
     public SyncStep2_AddNewTracks(
         IMusicProvider music,
@@ -37,7 +37,7 @@ public sealed class SyncStep2_AddNewTracks
         _logger = logger;
     }
 
-    public async Task ExecuteAsync(Domain.JobRun jobRun, CancellationToken ct)
+    public async Task ExecuteAsync(JobRun jobRun, CancellationToken ct)
     {
         Log.Step2Start(_logger);
 
@@ -55,7 +55,7 @@ public sealed class SyncStep2_AddNewTracks
             .Select(a => a.SpotifyAlbumId)
             .ToHashSetAsync(ct);
 
-        var newTracks = new List<Domain.Track>();
+        var newTracks = new List<Track>();
         var newlyProcessedAlbums = new List<ProcessedAlbum>();
         var albumsProcessed = 0;
         var tracksSkipped = 0;
@@ -71,7 +71,7 @@ public sealed class SyncStep2_AddNewTracks
 
                 Log.ProcessingAlbum(_logger, album.Name, album.Artist);
 
-                var albumTracks = new List<Domain.Track>();
+                var albumTracks = new List<Track>();
                 await foreach (var track in _music.GetAlbumTracksAsync(album.Id, album.Name, ct2))
                 {
                     if (likedTrackIds.Contains(track.Id) || historyTrackIds.Contains(track.Id))
@@ -79,6 +79,7 @@ public sealed class SyncStep2_AddNewTracks
                         Interlocked.Increment(ref tracksSkipped);
                         continue;
                     }
+
                     albumTracks.Add(track);
                 }
 

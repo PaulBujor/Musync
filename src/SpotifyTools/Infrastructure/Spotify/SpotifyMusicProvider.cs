@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using SpotifyTools.Domain;
 using SpotifyTools.Domain.Interfaces;
@@ -22,7 +23,8 @@ public sealed class SpotifyMusicProvider : IMusicProvider
             var response = await _http.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
-            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            using var doc =
+                await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
             var root = doc.RootElement;
 
             foreach (var item in root.GetProperty("items").EnumerateArray())
@@ -41,7 +43,8 @@ public sealed class SpotifyMusicProvider : IMusicProvider
         }
     }
 
-    public async IAsyncEnumerable<Track> GetAlbumTracksAsync(string albumId, string albumName, [EnumeratorCancellation] CancellationToken ct)
+    public async IAsyncEnumerable<Track> GetAlbumTracksAsync(string albumId, string albumName,
+        [EnumeratorCancellation] CancellationToken ct)
     {
         var url = $"https://api.spotify.com/v1/albums/{albumId}/tracks?limit=50";
         while (url is not null)
@@ -49,18 +52,17 @@ public sealed class SpotifyMusicProvider : IMusicProvider
             var response = await _http.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
-            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            using var doc =
+                await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
             var root = doc.RootElement;
 
             foreach (var item in root.GetProperty("items").EnumerateArray())
-            {
                 yield return new Track(
                     item.GetProperty("id").GetString()!,
                     item.GetProperty("name").GetString()!,
                     item.GetProperty("artists")[0].GetProperty("name").GetString()!,
                     albumName
                 );
-            }
 
             url = root.TryGetProperty("next", out var next) && next.ValueKind == JsonValueKind.String
                 ? next.GetString()
@@ -68,7 +70,8 @@ public sealed class SpotifyMusicProvider : IMusicProvider
         }
     }
 
-    public async IAsyncEnumerable<Track> GetPlaylistTracksAsync(string playlistId, [EnumeratorCancellation] CancellationToken ct)
+    public async IAsyncEnumerable<Track> GetPlaylistTracksAsync(string playlistId,
+        [EnumeratorCancellation] CancellationToken ct)
     {
         var url = $"https://api.spotify.com/v1/playlists/{playlistId}/tracks?limit=50";
         while (url is not null)
@@ -76,7 +79,8 @@ public sealed class SpotifyMusicProvider : IMusicProvider
             var response = await _http.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
-            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            using var doc =
+                await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
             var root = doc.RootElement;
 
             foreach (var item in root.GetProperty("items").EnumerateArray())
@@ -108,7 +112,8 @@ public sealed class SpotifyMusicProvider : IMusicProvider
             var response = await _http.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
-            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            using var doc =
+                await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
             var root = doc.RootElement;
 
             foreach (var item in root.GetProperty("items").EnumerateArray())
@@ -121,6 +126,7 @@ public sealed class SpotifyMusicProvider : IMusicProvider
                 ? next.GetString()
                 : null;
         }
+
         return ids;
     }
 
@@ -140,7 +146,8 @@ public sealed class SpotifyMusicProvider : IMusicProvider
             await AddBatchAsync(playlistId, batch, ct);
     }
 
-    public async Task RemoveTracksFromPlaylistAsync(string playlistId, IEnumerable<string> trackUris, CancellationToken ct)
+    public async Task RemoveTracksFromPlaylistAsync(string playlistId, IEnumerable<string> trackUris,
+        CancellationToken ct)
     {
         var batch = new List<string>();
         foreach (var uri in trackUris)
@@ -159,7 +166,7 @@ public sealed class SpotifyMusicProvider : IMusicProvider
     private async Task AddBatchAsync(string playlistId, List<string> uris, CancellationToken ct)
     {
         var payload = new { uris = uris.Select(u => $"spotify:track:{u}").ToArray() };
-        var content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
+        var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         var response = await _http.PostAsync($"https://api.spotify.com/v1/playlists/{playlistId}/tracks", content, ct);
         response.EnsureSuccessStatusCode();
     }
@@ -168,10 +175,11 @@ public sealed class SpotifyMusicProvider : IMusicProvider
     {
         var tracks = uris.Select(u => new { uri = $"spotify:track:{u}" }).ToArray();
         var payload = new { tracks };
-        var request = new HttpRequestMessage(HttpMethod.Delete, $"https://api.spotify.com/v1/playlists/{playlistId}/tracks")
-        {
-            Content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json")
-        };
+        var request =
+            new HttpRequestMessage(HttpMethod.Delete, $"https://api.spotify.com/v1/playlists/{playlistId}/tracks")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            };
         var response = await _http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
     }

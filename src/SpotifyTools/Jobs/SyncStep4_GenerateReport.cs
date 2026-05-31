@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SpotifyTools.Domain;
 
 namespace SpotifyTools.Jobs;
 
@@ -11,7 +12,7 @@ public sealed class SyncStep4_GenerateReport
         _logger = logger;
     }
 
-    public Task ExecuteAsync(Domain.JobRun jobRun, CancellationToken ct)
+    public Task ExecuteAsync(JobRun jobRun, CancellationToken ct)
     {
         var duration = jobRun.FinishedAt.HasValue
             ? jobRun.FinishedAt.Value - jobRun.StartedAt
