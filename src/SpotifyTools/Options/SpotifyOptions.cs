@@ -11,4 +11,5 @@ public sealed record SpotifyOptions
     [Range(1, 10)] public int MaxRetries { get; init; } = 3;
     [Range(1, 10)] public int MaxConcurrentRequests { get; init; } = 3;
     [Required] public string RedirectUri { get; init; } = "http://127.0.0.1:5000/callback";
+    [Required] public string ApiBaseUrl { get; init; } = "https://api.spotify.com/v1/";
 }

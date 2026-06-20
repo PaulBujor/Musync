@@ -106,7 +106,7 @@ public sealed class SpotifyAuthenticator(
         using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
         var refreshToken = doc.RootElement.GetProperty("refresh_token").GetString()!;
 
-        db.RefreshTokens.Add(new RefreshTokens
+        db.RefreshTokens.Add(new RefreshToken
         {
             Id = Guid.CreateVersion7(),
             Token = refreshToken,

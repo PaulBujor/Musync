@@ -113,7 +113,7 @@ public sealed class SpotifyTokenHandler(
                 .FirstOrDefaultAsync(ct);
             if (existing is null)
             {
-                db.RefreshTokens.Add(new RefreshTokens
+                db.RefreshTokens.Add(new RefreshToken
                 {
                     Id = Guid.CreateVersion7(),
                     Token = newToken,

@@ -60,14 +60,6 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
         }
     }
 
-    public async Task<HashSet<string>> GetLikedTrackIdsAsync(CancellationToken ct)
-    {
-        var ids = new HashSet<string>();
-        await foreach (var track in GetSavedTracksAsync(ct))
-            ids.Add(track.Id);
-        return ids;
-    }
-
     public Task AddTracksToPlaylistAsync(string playlistId, IEnumerable<string> trackUris, CancellationToken ct)
         => throw new NotSupportedException("Tidal playlist modification is not yet supported.");
 

@@ -25,37 +25,33 @@ public sealed class ImportTidalOrchestrator(
         using var _ = logger.BeginScope(new { JobRunId = jobRun.Id.ToString() });
         Log.StartingJob(logger, jobRun.Id.ToString());
 
+        async Task FinalizeAsync(string status, string? errorMessage = null)
+        {
+            jobRun.Status = status;
+            jobRun.FinishedAt = DateTime.UtcNow;
+            if (errorMessage is not null)
+                jobRun.ErrorMessage = errorMessage;
+            db.JobRuns.Update(jobRun);
+            await db.SaveChangesAsync(ct);
+            await step3.ExecuteAsync(jobRun);
+        }
+
         try
         {
             var candidates = await step1.ExecuteAsync(jobRun, ct);
             await step2.ExecuteAsync(jobRun, candidates, ct);
 
-            jobRun.Status = "succeeded";
-            jobRun.FinishedAt = DateTime.UtcNow;
-            db.JobRuns.Update(jobRun);
-            await db.SaveChangesAsync(ct);
-
-            await step3.ExecuteAsync(jobRun);
+            await FinalizeAsync("succeeded");
         }
         catch (OperationCanceledException)
         {
-            jobRun.Status = "partial";
-            jobRun.FinishedAt = DateTime.UtcNow;
-            jobRun.ErrorMessage = "Cancelled by user";
-            db.JobRuns.Update(jobRun);
-            await db.SaveChangesAsync(ct);
-            await step3.ExecuteAsync(jobRun);
+            await FinalizeAsync("partial", "Cancelled by user");
             throw;
         }
         catch (Exception ex)
         {
             Log.JobFailed(logger, ex.Message, ex);
-            jobRun.Status = "failed";
-            jobRun.FinishedAt = DateTime.UtcNow;
-            jobRun.ErrorMessage = ex.Message;
-            db.JobRuns.Update(jobRun);
-            await db.SaveChangesAsync(ct);
-            await step3.ExecuteAsync(jobRun);
+            await FinalizeAsync("failed", ex.Message);
             throw;
         }
     }

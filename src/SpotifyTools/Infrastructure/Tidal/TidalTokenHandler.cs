@@ -110,7 +110,7 @@ public sealed class TidalTokenHandler(
                 .FirstOrDefaultAsync(ct);
             if (existing is null)
             {
-                db.RefreshTokens.Add(new Domain.RefreshTokens
+                db.RefreshTokens.Add(new Domain.RefreshToken
                 {
                     Id = Guid.CreateVersion7(),
                     Token = newToken,

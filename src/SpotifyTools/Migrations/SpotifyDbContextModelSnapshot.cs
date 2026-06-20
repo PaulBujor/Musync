@@ -22,6 +22,10 @@ namespace SpotifyTools.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Details")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ErrorMessage")
                         .HasMaxLength(2000)
                         .HasColumnType("TEXT");
@@ -93,7 +97,7 @@ namespace SpotifyTools.Migrations
                     b.ToTable("ProcessedAlbums");
                 });
 
-            modelBuilder.Entity("SpotifyTools.Domain.RefreshTokens", b =>
+            modelBuilder.Entity("SpotifyTools.Domain.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
@@ -113,7 +117,9 @@ namespace SpotifyTools.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("RefreshTokens", (string)null);
+                    b.HasIndex("Provider", "UpdatedAt");
+
+                    b.ToTable("RefreshTokens");
                 });
 
             modelBuilder.Entity("SpotifyTools.Domain.TidalTrackMapping", b =>

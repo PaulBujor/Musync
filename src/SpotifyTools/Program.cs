@@ -43,20 +43,23 @@ builder.Services.AddScoped<ImportTidalStep2_AddToQueue>();
 builder.Services.AddScoped<ImportTidalStep3_GenerateReport>();
 builder.Services.AddScoped<ImportTidalOrchestrator>();
 
+var spotifyConfig = new SpotifyOptions();
+builder.Configuration.GetSection("Spotify").Bind(spotifyConfig);
+var tidalConfig = new TidalOptions();
+builder.Configuration.GetSection("Tidal").Bind(tidalConfig);
+
 // Spotify auth + HTTP (default IMusicProvider)
 builder.Services.AddScoped<ISpotifyAuthenticator, SpotifyAuthenticator>();
 builder.Services.AddTransient<SpotifyTokenHandler>();
 builder.Services
     .AddHttpClient<IMusicProvider, SpotifyMusicProvider>(client =>
     {
-        client.BaseAddress = new Uri("https://api.spotify.com/v1/");
+        client.BaseAddress = new Uri(spotifyConfig.ApiBaseUrl);
     })
     .AddHttpMessageHandler<SpotifyTokenHandler>()
     .AddStandardResilienceHandler(options =>
     {
-        var spotifyOptions = new SpotifyOptions();
-        builder.Configuration.GetSection("Spotify").Bind(spotifyOptions);
-        options.Retry.MaxRetryAttempts = spotifyOptions.MaxRetries;
+        options.Retry.MaxRetryAttempts = spotifyConfig.MaxRetries;
         options.Retry.DelayGenerator = args =>
         {
             if (args.Outcome.Result?.Headers.RetryAfter?.Delta is { } delta)
@@ -70,7 +73,7 @@ builder.Services.AddScoped<ITidalAuthenticator, TidalAuthenticator>();
 builder.Services.AddTransient<TidalTokenHandler>();
 builder.Services.AddHttpClient("tidal-music", client =>
 {
-    client.BaseAddress = new Uri("https://api.tidal.com/v1/");
+    client.BaseAddress = new Uri(tidalConfig.ApiBaseUrl);
 })
 .AddHttpMessageHandler<TidalTokenHandler>()
 .AddStandardResilienceHandler(options =>
@@ -85,7 +88,7 @@ builder.Services.AddKeyedSingleton<IMusicProvider>("tidal", (sp, _) =>
 builder.Services
     .AddHttpClient<ITrackMapper, SpotifyTrackMapper>(client =>
     {
-        client.BaseAddress = new Uri("https://api.spotify.com/v1/");
+        client.BaseAddress = new Uri(spotifyConfig.ApiBaseUrl);
     })
     .AddHttpMessageHandler<SpotifyTokenHandler>()
     .AddStandardResilienceHandler(options =>

@@ -15,8 +15,8 @@ public sealed class JobOrchestratorTests
 {
     private static ServiceProvider BuildTestServices(
         List<Album>? savedAlbums = null,
-        HashSet<string>? likedTrackIds = null,
-        List<Track>? playlistTracks = null)
+        List<Track>? playlistTracks = null,
+        List<Track>? savedTracks = null)
     {
         var services = new ServiceCollection();
 
@@ -25,7 +25,7 @@ public sealed class JobOrchestratorTests
 
         services.AddHybridCache();
         services.AddSingleton<IMusicProvider>(_ =>
-            new LocalMockMusicProvider(savedAlbums, likedTrackIds, playlistTracks));
+            new LocalMockMusicProvider(savedAlbums, playlistTracks, savedTracks));
 
         services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new SpotifyOptions
         {
@@ -122,11 +122,14 @@ public sealed class JobOrchestratorTests
             new("album-a", "Album A", "Artist A")
         };
 
-        var likedTrackIds = new HashSet<string> { "track-a1" };
+        var savedTracks = new List<Track>
+        {
+            new("track-a1", "Track A1", "Artist A", "Album A")
+        };
 
         var sp = BuildTestServices(
             albums,
-            likedTrackIds);
+            savedTracks: savedTracks);
 
         var orchestrator = sp.GetRequiredService<JobOrchestrator>();
         await orchestrator.RunAsync(CancellationToken.None);
@@ -236,7 +239,10 @@ public sealed class JobOrchestratorTests
     [Fact]
     public async Task RunAsync_LikedTrackInPlaylist_RemovesIt()
     {
-        var likedTrackIds = new HashSet<string> { "track-a1" };
+        var savedTracks = new List<Track>
+        {
+            new("track-a1", "Track A1", "Artist A", "Album A")
+        };
         var playlistTracks = new List<Track>
         {
             new("track-a1", "Track A1", "Artist A", "Album A"),
@@ -245,8 +251,8 @@ public sealed class JobOrchestratorTests
 
         var sp = BuildTestServices(
             [],
-            likedTrackIds,
-            playlistTracks);
+            playlistTracks,
+            savedTracks);
 
         var orchestrator = sp.GetRequiredService<JobOrchestrator>();
         await orchestrator.RunAsync(CancellationToken.None);

@@ -11,9 +11,20 @@ namespace SpotifyTools.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropPrimaryKey(
+                name: "PK_refresh_tokens",
+                table: "refresh_tokens");
+
             migrationBuilder.RenameTable(
                 name: "refresh_tokens",
                 newName: "RefreshTokens");
+
+            migrationBuilder.AddColumn<string>(
+                name: "Details",
+                table: "JobRuns",
+                type: "TEXT",
+                maxLength: 4000,
+                nullable: true);
 
             migrationBuilder.AddColumn<string>(
                 name: "Provider",
@@ -21,7 +32,12 @@ namespace SpotifyTools.Migrations
                 type: "TEXT",
                 maxLength: 50,
                 nullable: false,
-                defaultValue: "spotify");
+                defaultValue: "");
+
+            migrationBuilder.AddPrimaryKey(
+                name: "PK_RefreshTokens",
+                table: "RefreshTokens",
+                column: "Id");
 
             migrationBuilder.CreateTable(
                 name: "TidalTrackMappings",
@@ -39,6 +55,11 @@ namespace SpotifyTools.Migrations
                 });
 
             migrationBuilder.CreateIndex(
+                name: "IX_RefreshTokens_Provider_UpdatedAt",
+                table: "RefreshTokens",
+                columns: new[] { "Provider", "UpdatedAt" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_TidalTrackMappings_TidalTrackId",
                 table: "TidalTrackMappings",
                 column: "TidalTrackId",
@@ -48,17 +69,33 @@ namespace SpotifyTools.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "TidalTrackMappings");
+
+            migrationBuilder.DropPrimaryKey(
+                name: "PK_RefreshTokens",
+                table: "RefreshTokens");
+
+            migrationBuilder.DropIndex(
+                name: "IX_RefreshTokens_Provider_UpdatedAt",
+                table: "RefreshTokens");
+
+            migrationBuilder.DropColumn(
+                name: "Details",
+                table: "JobRuns");
+
             migrationBuilder.DropColumn(
                 name: "Provider",
                 table: "RefreshTokens");
 
-            // Rename back to original table name
             migrationBuilder.RenameTable(
                 name: "RefreshTokens",
                 newName: "refresh_tokens");
 
-            migrationBuilder.DropTable(
-                name: "TidalTrackMappings");
+            migrationBuilder.AddPrimaryKey(
+                name: "PK_refresh_tokens",
+                table: "refresh_tokens",
+                column: "Id");
         }
     }
 }

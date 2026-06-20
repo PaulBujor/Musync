@@ -21,6 +21,9 @@ public sealed class JobRun
     public int NewAlbumsEncountered { get; set; }
     public int QueueSizeAfter { get; set; }
 
+    [MaxLength(4000)]
+    public string? Details { get; set; }
+
     [MaxLength(2000)]
     public string? ErrorMessage { get; set; }
 }

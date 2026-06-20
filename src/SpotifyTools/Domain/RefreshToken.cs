@@ -1,9 +1,11 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.EntityFrameworkCore;
 
 namespace SpotifyTools.Domain;
 
-public sealed class RefreshTokens
+[Index(nameof(Provider), nameof(UpdatedAt))]
+public sealed class RefreshToken
 {
     [Key, DatabaseGenerated(DatabaseGeneratedOption.None)]
     public Guid Id { get; set; }
