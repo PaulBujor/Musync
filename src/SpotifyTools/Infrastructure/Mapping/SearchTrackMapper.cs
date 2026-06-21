@@ -7,11 +7,11 @@ using SpotifyTools.Infrastructure.Spotify.Models;
 
 namespace SpotifyTools.Infrastructure.Mapping;
 
-public sealed class SpotifyTrackMapper(
+public sealed class SearchTrackMapper(
     HttpClient http,
-    ILogger<SpotifyTrackMapper> logger) : ITrackMapper
+    ILogger<SearchTrackMapper> logger) : ITrackMapper
 {
-    public async Task<string?> FindSpotifyTrackIdAsync(Track track, CancellationToken ct)
+    public async Task<string?> FindTargetTrackIdAsync(Track track, CancellationToken ct)
     {
         if (!string.IsNullOrEmpty(track.Isrc))
         {
@@ -32,7 +32,7 @@ public sealed class SpotifyTrackMapper(
         var response = await http.GetAsync(url, ct);
         if (!response.IsSuccessStatusCode)
         {
-            Log.SpotifySearchFailed(logger, (int)response.StatusCode, query);
+            Log.SearchFailed(logger, (int)response.StatusCode, query);
             return null;
         }
 
@@ -52,6 +52,6 @@ public sealed class SpotifyTrackMapper(
 
 public static partial class Log
 {
-    [LoggerMessage(LogLevel.Warning, "Spotify search failed: {StatusCode} for query '{Query}'")]
-    public static partial void SpotifySearchFailed(ILogger logger, int statusCode, string query);
+    [LoggerMessage(LogLevel.Warning, "Track search failed: {StatusCode} for query '{Query}'")]
+    public static partial void SearchFailed(ILogger logger, int statusCode, string query);
 }

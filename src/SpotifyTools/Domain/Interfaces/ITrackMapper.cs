@@ -4,5 +4,5 @@ namespace SpotifyTools.Domain.Interfaces;
 
 public interface ITrackMapper
 {
-    Task<string?> FindSpotifyTrackIdAsync(Track track, CancellationToken ct);
+    Task<string?> FindTargetTrackIdAsync(Track track, CancellationToken ct);
 }

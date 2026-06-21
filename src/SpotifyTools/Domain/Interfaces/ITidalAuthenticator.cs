@@ -1,6 +1,3 @@
 namespace SpotifyTools.Domain.Interfaces;
 
-public interface ITidalAuthenticator
-{
-    Task EnsureAuthenticatedAsync(CancellationToken ct);
-}
+public interface ITidalAuthenticator : IAuthenticator;

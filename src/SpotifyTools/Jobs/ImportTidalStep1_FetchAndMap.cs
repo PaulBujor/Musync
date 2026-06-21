@@ -33,7 +33,7 @@ public sealed class ImportTidalStep1_FetchAndMap(
                 continue;
             }
 
-            var spotifyId = await trackMapper.FindSpotifyTrackIdAsync(tidalTrack, ct);
+            var spotifyId = await trackMapper.FindTargetTrackIdAsync(tidalTrack, ct);
 
             db.TidalTrackMappings.Add(new TidalTrackMapping
             {

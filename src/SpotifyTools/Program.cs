@@ -78,7 +78,7 @@ builder.Services.AddHttpClient("tidal-music", client =>
 .AddHttpMessageHandler<TidalTokenHandler>()
 .AddStandardResilienceHandler(options =>
 {
-    options.Retry.MaxRetryAttempts = 3;
+    options.Retry.MaxRetryAttempts = tidalConfig.MaxRetries;
 });
 builder.Services.AddKeyedSingleton<IMusicProvider>("tidal", (sp, _) =>
     new TidalMusicProvider(
@@ -86,7 +86,7 @@ builder.Services.AddKeyedSingleton<IMusicProvider>("tidal", (sp, _) =>
 
 // Track mapper (Spotify search for ISRC matching)
 builder.Services
-    .AddHttpClient<ITrackMapper, SpotifyTrackMapper>(client =>
+    .AddHttpClient<ITrackMapper, SearchTrackMapper>(client =>
     {
         client.BaseAddress = new Uri(spotifyConfig.ApiBaseUrl);
     })
