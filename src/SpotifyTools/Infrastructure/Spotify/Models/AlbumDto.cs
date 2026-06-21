@@ -5,7 +5,7 @@ namespace SpotifyTools.Infrastructure.Spotify.Models;
 public class AlbumDto
 {
     [JsonPropertyName("id")]
-    public string? Id { get; set; }
+    public string Id { get; set; } = "";
 
     [JsonPropertyName("name")]
     public string Name { get; set; } = "";
