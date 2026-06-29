@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SpotifyTools.Domain;
@@ -11,6 +12,7 @@ namespace SpotifyTools.Jobs;
 public sealed class ImportTidalStep2_AddToQueue(
     IMusicProvider spotifyMusic,
     SpotifyDbContext db,
+    HybridCache cache,
     IOptions<SpotifyOptions> options,
     ILogger<ImportTidalStep2_AddToQueue> logger)
 {
@@ -27,7 +29,7 @@ public sealed class ImportTidalStep2_AddToQueue(
         }
 
         // Load existing track history to avoid duplicates
-        var existingTrackIds = await db.TrackHistories
+        var existingTrackIdsTask = db.TrackHistories
             .Select(x => x.SpotifyTrackId)
             .Distinct()
             .ToHashSetAsync(ct);
@@ -37,10 +39,24 @@ public sealed class ImportTidalStep2_AddToQueue(
         await foreach (var track in spotifyMusic.GetPlaylistTracksAsync(_options.QueuePlaylistId, ct))
             currentPlaylistIds.Add(track.Id);
 
+        // Skip tracks the user already likes on Spotify
+        var likedTrackIds = await cache.GetOrCreateAsync(
+            CacheKeys.LikedTracks,
+            async ct2 =>
+            {
+                var ids = new HashSet<string>();
+                await foreach (var t in spotifyMusic.GetSavedTracksAsync(ct2))
+                    ids.Add(t.Id);
+                return ids;
+            },
+            cancellationToken: ct);
+
+        var existingTrackIds = await existingTrackIdsTask;
+
         var newTracks = new List<(string SpotifyTrackId, Track TidalTrack)>();
         foreach (var (spotifyId, tidalTrack) in candidates)
         {
-            if (existingTrackIds.Contains(spotifyId) || currentPlaylistIds.Contains(spotifyId))
+            if (existingTrackIds.Contains(spotifyId) || currentPlaylistIds.Contains(spotifyId) || likedTrackIds.Contains(spotifyId))
             {
                 jobRun.TracksSkipped++;
                 continue;

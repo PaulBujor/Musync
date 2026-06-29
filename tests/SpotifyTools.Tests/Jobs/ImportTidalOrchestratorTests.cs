@@ -16,6 +16,7 @@ public sealed class ImportTidalOrchestratorTests
     private static ServiceProvider BuildTestServices(
         List<Track>? tidalTracks = null,
         List<Track>? playlistTracks = null,
+        List<Track>? spotifyLikedTracks = null,
         Dictionary<string, string>? trackMapping = null)
     {
         var services = new ServiceCollection();
@@ -25,7 +26,7 @@ public sealed class ImportTidalOrchestratorTests
 
         services.AddHybridCache();
 
-        var spotifyMock = new LocalMockMusicProvider(playlistTracks: playlistTracks);
+        var spotifyMock = new LocalMockMusicProvider(playlistTracks: playlistTracks, savedTracks: spotifyLikedTracks);
         services.AddSingleton<IMusicProvider>(spotifyMock);
         services.AddKeyedSingleton<IMusicProvider>("tidal", (_, _) =>
             new LocalMockMusicProvider(savedTracks: tidalTracks));
@@ -208,5 +209,35 @@ public sealed class ImportTidalOrchestratorTests
         var latest = await GetLatestJobRunAsync(db);
         Assert.NotNull(latest);
         Assert.Equal(1, latest.TracksAdded);
+    }
+
+    [Fact]
+    public async Task RunAsync_TrackAlreadyLikedOnSpotify_SkipsIt()
+    {
+        var tidalTracks = new List<Track>
+        {
+            new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
+            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002"),
+        };
+
+        var spotifyLiked = new List<Track>
+        {
+            new("spotify-track-1", "Track One", "Artist A", "Album A", "USRC10000001"),
+        };
+
+        var sp = BuildTestServices(tidalTracks: tidalTracks, spotifyLikedTracks: spotifyLiked);
+        var orchestrator = sp.GetRequiredService<ImportTidalOrchestrator>();
+        await orchestrator.RunAsync(CancellationToken.None);
+
+        var mock = (LocalMockMusicProvider)sp.GetRequiredKeyedService<IMusicProvider>("spotify");
+        Assert.Single(mock.PlaylistTracks);
+        Assert.Contains(mock.PlaylistTracks, t => t.Id == "spotify-track-2");
+        Assert.DoesNotContain(mock.PlaylistTracks, t => t.Id == "spotify-track-1");
+
+        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var latest = await GetLatestJobRunAsync(db);
+        Assert.NotNull(latest);
+        Assert.Equal(1, latest.TracksAdded);
+        Assert.Equal(1, latest.TracksSkipped);
     }
 }
