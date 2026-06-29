@@ -13,6 +13,7 @@ public sealed class SpotifyDbContext : DbContext
     public DbSet<TrackHistory> TrackHistories => Set<TrackHistory>();
     public DbSet<ProcessedAlbum> ProcessedAlbums => Set<ProcessedAlbum>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<TidalTrackMapping> TidalTrackMappings => Set<TidalTrackMapping>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {

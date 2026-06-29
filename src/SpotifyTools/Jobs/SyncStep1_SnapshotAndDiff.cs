@@ -23,7 +23,13 @@ public sealed class SyncStep1_SnapshotAndDiff(
 
         var likedTrackIdsTask = cache.GetOrCreateAsync(
             CacheKeys.LikedTracks,
-            async ct2 => await music.GetLikedTrackIdsAsync(ct2),
+            async ct2 =>
+            {
+                var ids = new HashSet<string>();
+                await foreach (var t in music.GetSavedTracksAsync(ct2))
+                    ids.Add(t.Id);
+                return ids;
+            },
             cancellationToken: ct).AsTask();
 
         var currentPlaylistTracks = await FetchPlaylistAsync(ct);

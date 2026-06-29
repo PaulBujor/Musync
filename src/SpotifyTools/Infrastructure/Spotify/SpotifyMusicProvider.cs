@@ -25,7 +25,7 @@ public sealed class SpotifyMusicProvider(HttpClient http) : IMusicProvider
                 yield break;
 
             foreach (var item in page.Items)
-                yield return new Album(item.Album.Id, item.Album.Name, item.Album.Artists[0].Name);
+                yield return new Album(item.Album.Id, item.Album.Name, item.Album.Artists.Count > 0 ? item.Album.Artists[0].Name : "Unknown Artist");
 
             url = page.Next;
         }
@@ -41,13 +41,34 @@ public sealed class SpotifyMusicProvider(HttpClient http) : IMusicProvider
             response.EnsureSuccessStatusCode();
 
             var page = await response.Content
-                .ReadFromJsonAsync(SpotifyApiJsonContext.Default.PagedResponseAlbumTrackItem, ct);
+                .ReadFromJsonAsync(SpotifyApiJsonContext.Default.PagedResponseSpotifyTrackDto, ct);
 
             if (page is null)
                 yield break;
 
             foreach (var item in page.Items)
-                yield return new Track(item.Id, item.Name, item.Artists[0].Name, albumName);
+                yield return new Track(item.Id, item.Name, item.Artists.Count > 0 ? item.Artists[0].Name : "Unknown Artist", albumName);
+
+            url = page.Next;
+        }
+    }
+
+    public async IAsyncEnumerable<Track> GetSavedTracksAsync([EnumeratorCancellation] CancellationToken ct)
+    {
+        var url = "me/tracks?limit=50";
+        while (url is not null)
+        {
+            var response = await http.GetAsync(url, ct);
+            response.EnsureSuccessStatusCode();
+
+            var page = await response.Content
+                .ReadFromJsonAsync(SpotifyApiJsonContext.Default.PagedResponseLikedTrackItem, ct);
+
+            if (page is null)
+                yield break;
+
+            foreach (var item in page.Items)
+                yield return new Track(item.Track.Id, item.Track.Name, item.Track.Artists.Count > 0 ? item.Track.Artists[0].Name : "Unknown Artist", item.Track.Album?.Name ?? "", Isrc: item.Track.ExternalIds?.Isrc);
 
             url = page.Next;
         }
@@ -76,36 +97,12 @@ public sealed class SpotifyMusicProvider(HttpClient http) : IMusicProvider
                 yield return new Track(
                     item.Item.Id,
                     item.Item.Name,
-                    item.Item.Artists[0].Name,
-                    item.Item.Album.Name);
+                    item.Item.Artists.Count > 0 ? item.Item.Artists[0].Name : "Unknown Artist",
+                    item.Item.Album?.Name ?? "");
             }
 
             url = page.Next;
         }
-    }
-
-    public async Task<HashSet<string>> GetLikedTrackIdsAsync(CancellationToken ct)
-    {
-        var ids = new HashSet<string>();
-        var url = "me/tracks?limit=50";
-        while (url is not null)
-        {
-            var response = await http.GetAsync(url, ct);
-            response.EnsureSuccessStatusCode();
-
-            var page = await response.Content
-                .ReadFromJsonAsync(SpotifyApiJsonContext.Default.PagedResponseLikedTrackItem, ct);
-
-            if (page is null)
-                break;
-
-            foreach (var item in page.Items)
-                ids.Add(item.Track.Id);
-
-            url = page.Next;
-        }
-
-        return ids;
     }
 
     public async Task AddTracksToPlaylistAsync(string playlistId, IEnumerable<string> trackUris, CancellationToken ct)

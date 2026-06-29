@@ -4,12 +4,12 @@ using SpotifyTools.Infrastructure.Persistence;
 
 namespace SpotifyTools.Jobs;
 
-public sealed class JobOrchestrator(
+public sealed class ImportTidalOrchestrator(
     SpotifyDbContext db,
-    SyncStep1_SnapshotAndDiff step1,
-    SyncStep2_AddNewTracks step2,
-    SyncStep3_GenerateReport step3,
-    ILogger<JobOrchestrator> logger)
+    ImportTidalStep1_FetchAndMap step1,
+    ImportTidalStep2_AddToQueue step2,
+    ImportTidalStep3_GenerateReport step3,
+    ILogger<ImportTidalOrchestrator> logger)
 {
     public async Task RunAsync(CancellationToken ct)
     {
@@ -19,7 +19,6 @@ public sealed class JobOrchestrator(
             StartedAt = DateTime.UtcNow,
             Status = "running"
         };
-
         db.JobRuns.Add(jobRun);
         await db.SaveChangesAsync(ct);
 
@@ -34,13 +33,13 @@ public sealed class JobOrchestrator(
                 jobRun.ErrorMessage = errorMessage;
             db.JobRuns.Update(jobRun);
             await db.SaveChangesAsync(ct);
-            await step3.ExecuteAsync(jobRun, ct);
+            await step3.ExecuteAsync(jobRun);
         }
 
         try
         {
-            await step1.ExecuteAsync(jobRun, ct);
-            await step2.ExecuteAsync(jobRun, ct);
+            var candidates = await step1.ExecuteAsync(jobRun, ct);
+            await step2.ExecuteAsync(jobRun, candidates, ct);
 
             await FinalizeAsync("succeeded");
         }

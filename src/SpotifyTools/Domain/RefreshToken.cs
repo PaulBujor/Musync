@@ -1,9 +1,10 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.EntityFrameworkCore;
 
 namespace SpotifyTools.Domain;
 
-[Table("refresh_tokens")]
+[Index(nameof(Provider), nameof(UpdatedAt))]
 public sealed class RefreshToken
 {
     [Key, DatabaseGenerated(DatabaseGeneratedOption.None)]
@@ -11,6 +12,9 @@ public sealed class RefreshToken
 
     [Required, MaxLength(4000)]
     public string Token { get; set; } = "";
+
+    [Required, MaxLength(50)]
+    public string Provider { get; set; } = "";
 
     public DateTime UpdatedAt { get; set; }
 }
