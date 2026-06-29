@@ -5,7 +5,7 @@ using SpotifyTools.Domain;
 using SpotifyTools.Domain.Interfaces;
 using SpotifyTools.Infrastructure.Spotify.Models;
 
-namespace SpotifyTools.Infrastructure.Mapping;
+namespace SpotifyTools.Infrastructure.Spotify;
 
 public sealed class SpotifySearchMapper(
     HttpClient http,

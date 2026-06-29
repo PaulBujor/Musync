@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SpotifyTools.Domain.Interfaces;
-using SpotifyTools.Infrastructure.Mapping;
 using SpotifyTools.Infrastructure.Persistence;
 using SpotifyTools.Infrastructure.Spotify;
 using SpotifyTools.Infrastructure.Tidal;
