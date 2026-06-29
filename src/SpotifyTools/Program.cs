@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using SpotifyTools.Domain.Interfaces;
 using SpotifyTools.Infrastructure.Mapping;
 using SpotifyTools.Infrastructure.Persistence;
@@ -20,12 +21,11 @@ builder.Services
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
-// Tidal options
+// Tidal options (validated on use, not on start — sync doesn't need them)
 builder.Services
     .AddOptions<TidalOptions>()
     .BindConfiguration("Tidal")
-    .ValidateDataAnnotations()
-    .ValidateOnStart();
+    .ValidateDataAnnotations();
 
 builder.Services.AddHybridCache();
 builder.Services.AddDbContext<SpotifyDbContext>(options =>
@@ -84,9 +84,9 @@ builder.Services.AddKeyedSingleton<IMusicProvider>("tidal", (sp, _) =>
     new TidalMusicProvider(
         sp.GetRequiredService<IHttpClientFactory>().CreateClient("tidal-music")));
 
-// Track mapper (Spotify search for ISRC matching)
+// Track mapper (SearchSpotify for ISRC matching)
 builder.Services
-    .AddHttpClient<ITrackMapper, SearchTrackMapper>(client =>
+    .AddHttpClient<ITrackMapper, SpotifySearchMapper>(client =>
     {
         client.BaseAddress = new Uri(spotifyConfig.ApiBaseUrl);
     })
@@ -140,6 +140,14 @@ if (invokedCommand == syncCommand || invokedCommand == rootCommand)
 }
 else if (invokedCommand == importTidalCommand)
 {
+    // Validate Tidal options before running
+    var tidalOpts = host.Services.GetRequiredService<IOptions<TidalOptions>>().Value;
+    if (string.IsNullOrEmpty(tidalOpts.ClientId))
+    {
+        await Console.Error.WriteLineAsync("Tidal ClientId is not configured. Set Tidal__ClientId in your .env file.");
+        return 1;
+    }
+
     await using var scope = host.Services.CreateAsyncScope();
     var orchestrator = scope.ServiceProvider.GetRequiredService<ImportTidalOrchestrator>();
     try

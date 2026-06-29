@@ -7,9 +7,9 @@ using SpotifyTools.Infrastructure.Spotify.Models;
 
 namespace SpotifyTools.Infrastructure.Mapping;
 
-public sealed class SearchTrackMapper(
+public sealed class SpotifySearchMapper(
     HttpClient http,
-    ILogger<SearchTrackMapper> logger) : ITrackMapper
+    ILogger<SpotifySearchMapper> logger) : ITrackMapper
 {
     public async Task<string?> FindTargetTrackIdAsync(Track track, CancellationToken ct)
     {

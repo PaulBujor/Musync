@@ -100,7 +100,7 @@ Each sync run executes four steps:
 
 Runs three steps:
 
-1. **Fetch & map** — authenticates with Tidal, fetches the playlist, searches each track in Spotify's catalog via `SearchTrackMapper`.
+1. **Fetch & map** — authenticates with Tidal, fetches the playlist, searches each track in Spotify's catalog via `SpotifySearchMapper`.
 2. **Add to queue** — adds matched tracks to the queue playlist using the same dedup logic as sync.
 3. **Generate report** — summarises imported, skipped, and unmatched tracks.
 
@@ -160,7 +160,7 @@ SpotifyTools.slnx
 │   │   └── Interfaces/       # IMusicProvider, IAuthenticator, ITrackMapper, etc.
 │   ├── Infrastructure/
 │   │   ├── Auth/             # Shared PKCE authenticator & token handler bases
-│   │   ├── Mapping/          # SearchTrackMapper (ISRC + by-name fallback)
+│   │   ├── Mapping/          # SpotifySearchMapper (ISRC + by-name fallback)
 │   │   ├── Spotify/          # Spotify API client, auth, token handler, models
 │   │   ├── Tidal/            # Tidal API client, auth, token handler, models
 │   │   └── Persistence/      # EF Core DbContext, migrations, repos
