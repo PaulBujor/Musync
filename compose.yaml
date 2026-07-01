@@ -2,28 +2,27 @@
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_USER: spotifytools
-      POSTGRES_PASSWORD: spotifytools
-      POSTGRES_DB: spotifytools
+      POSTGRES_USER: musync
+      POSTGRES_PASSWORD: musync
+      POSTGRES_DB: musync
     ports:
       - "5432:5432"
     volumes:
       - ./Data/postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U spotifytools -d spotifytools"]
+      test: ["CMD-SHELL", "pg_isready -U musync -d musync"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  spotifytools:
-    image: spotifytools
+  musync:
+    image: musync
     build:
       context: .
-      dockerfile: src/SpotifyTools/Dockerfile
+      dockerfile: src/Musync/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      ConnectionStrings__Default: "Host=postgres;Database=spotifytools;Username=spotifytools;Password=spotifytools"
-
+      ConnectionStrings__Default: "Host=postgres;Database=musync;Username=musync;Password=musync"
 

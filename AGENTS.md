@@ -1,4 +1,4 @@
-# SpotifyTools — Agent Guide
+# Musync — Agent Guide
 
 ## Ground Truth
 
@@ -8,27 +8,27 @@
 
 ```bash
 # Create solution (do NOT hand-edit .sln or .csproj)
-dotnet new sln -n SpotifyTools
+dotnet new sln -n Musync
 
 # Create projects
-dotnet new console -n SpotifyTools -o src/SpotifyTools --framework net10.0
-dotnet new xunit -n SpotifyTools.Tests -o tests/SpotifyTools.Tests --framework net10.0
+dotnet new console -n Musync -o src/Musync --framework net10.0
+dotnet new xunit -n Musync.Tests -o tests/Musync.Tests --framework net10.0
 
 # Wire up solution
-dotnet sln add src/SpotifyTools/SpotifyTools.csproj
-dotnet sln add tests/SpotifyTools.Tests/SpotifyTools.Tests.csproj
-dotnet add tests/SpotifyTools.Tests reference src/SpotifyTools/SpotifyTools.csproj
+dotnet sln add src/Musync/Musync.csproj
+dotnet sln add tests/Musync.Tests/Musync.Tests.csproj
+dotnet add tests/Musync.Tests reference src/Musync/Musync.csproj
 
 # Add packages — use `dotnet add package`, never edit .csproj directly
-dotnet add src/SpotifyTools package Microsoft.EntityFrameworkCore.Sqlite
-dotnet add src/SpotifyTools package System.CommandLine
+dotnet add src/Musync package Microsoft.EntityFrameworkCore.Sqlite
+dotnet add src/Musync package System.CommandLine
 ```
 
 ## Run Commands
 
 | Mode | Command |
 |------|---------|
-| Direct | `dotnet run --project src/SpotifyTools` |
+| Direct | `dotnet run --project src/Musync` |
 | Docker | `docker compose up` (uses `compose.yaml`) |
 | Tests | `dotnet test` (mock provider, no credentials needed) |
 
