@@ -10,7 +10,7 @@ namespace SpotifyTools.Jobs;
 public sealed class ImportTidalStep1_FetchAndMap(
     [FromKeyedServices("tidal")] IMusicProvider tidalMusic,
     ITrackMapper trackMapper,
-    SpotifyDbContext db,
+    AppDbContext db,
     ILogger<ImportTidalStep1_FetchAndMap> logger)
 {
     public async Task<List<(string SpotifyTrackId, Track TidalTrack)>> ExecuteAsync(Domain.JobRun jobRun, CancellationToken ct)

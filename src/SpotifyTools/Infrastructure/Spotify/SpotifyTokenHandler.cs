@@ -12,7 +12,7 @@ namespace SpotifyTools.Infrastructure.Spotify;
 public sealed class SpotifyTokenHandler(
     IOptions<SpotifyOptions> options,
     ISpotifyAuthenticator authenticator,
-    SpotifyDbContext db,
+    AppDbContext db,
     ILogger<SpotifyTokenHandler> logger)
     : TokenHandlerBase(db, logger, authenticator)
 {

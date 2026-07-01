@@ -9,7 +9,7 @@ namespace SpotifyTools.Infrastructure.Spotify;
 
 public sealed class SpotifyAuthenticator(
     IOptions<SpotifyOptions> options,
-    SpotifyDbContext db,
+    AppDbContext db,
     ILogger<SpotifyAuthenticator> logger,
     HttpClient httpClient)
     : PkceAuthenticatorBase(db, logger, httpClient), ISpotifyAuthenticator

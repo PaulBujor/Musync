@@ -11,7 +11,7 @@ namespace SpotifyTools.Jobs;
 
 public sealed class SyncStep2_AddNewTracks(
     IMusicProvider music,
-    SpotifyDbContext db,
+    AppDbContext db,
     HybridCache cache,
     IOptions<SpotifyOptions> options,
     ILogger<SyncStep2_AddNewTracks> logger)

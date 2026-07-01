@@ -10,7 +10,7 @@ namespace SpotifyTools.Jobs;
 
 public sealed class SyncStep1_SnapshotAndDiff(
     IMusicProvider music,
-    SpotifyDbContext db,
+    AppDbContext db,
     HybridCache cache,
     IOptions<SpotifyOptions> options,
     ILogger<SyncStep1_SnapshotAndDiff> logger)

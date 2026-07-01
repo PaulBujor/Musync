@@ -9,7 +9,7 @@ namespace SpotifyTools.Infrastructure.Tidal;
 
 public sealed class TidalAuthenticator(
     IOptions<TidalOptions> options,
-    SpotifyDbContext db,
+    AppDbContext db,
     ILogger<TidalAuthenticator> logger,
     HttpClient httpClient)
     : PkceAuthenticatorBase(db, logger, httpClient), ITidalAuthenticator

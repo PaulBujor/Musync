@@ -9,7 +9,7 @@ using SpotifyTools.Infrastructure.Persistence;
 namespace SpotifyTools.Infrastructure.Auth;
 
 public abstract class TokenHandlerBase(
-    SpotifyDbContext db,
+    AppDbContext db,
     ILogger logger,
     IAuthenticator authenticator) : DelegatingHandler
 {

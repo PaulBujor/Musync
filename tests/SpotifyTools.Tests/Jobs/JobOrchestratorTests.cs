@@ -20,7 +20,7 @@ public sealed class JobOrchestratorTests
     {
         var services = new ServiceCollection();
 
-        services.AddDbContext<SpotifyDbContext>(options =>
+        services.AddDbContext<AppDbContext>(options =>
             options.UseSqlite("Data Source=:memory:"));
 
         services.AddHybridCache();
@@ -49,14 +49,14 @@ public sealed class JobOrchestratorTests
 
         var sp = services.BuildServiceProvider();
 
-        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var db = sp.GetRequiredService<AppDbContext>();
         db.Database.OpenConnection();
         db.Database.EnsureCreated();
 
         return sp;
     }
 
-    private static async Task<JobRun?> GetLatestJobRunAsync(SpotifyDbContext db)
+    private static async Task<JobRun?> GetLatestJobRunAsync(AppDbContext db)
     {
         return await db.JobRuns.OrderByDescending(x => x.StartedAt).FirstOrDefaultAsync();
     }
@@ -71,7 +71,7 @@ public sealed class JobOrchestratorTests
         var mock = (LocalMockMusicProvider)sp.GetRequiredService<IMusicProvider>();
         Assert.Empty(mock.PlaylistTracks);
 
-        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var db = sp.GetRequiredService<AppDbContext>();
         Assert.Empty(await db.TrackHistories.ToListAsync());
         Assert.Empty(await db.ProcessedAlbums.ToListAsync());
 
@@ -97,7 +97,7 @@ public sealed class JobOrchestratorTests
         Assert.Contains(mock.PlaylistTracks, t => t.Id == "track-a1");
         Assert.Contains(mock.PlaylistTracks, t => t.Id == "track-a2");
 
-        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var db = sp.GetRequiredService<AppDbContext>();
         var history = await db.TrackHistories.ToListAsync();
         Assert.Equal(2, history.Count);
         Assert.Contains(history, h => h.SpotifyTrackId == "track-a1");
@@ -139,7 +139,7 @@ public sealed class JobOrchestratorTests
         Assert.Contains(mock.PlaylistTracks, t => t.Id == "track-a2");
         Assert.DoesNotContain(mock.PlaylistTracks, t => t.Id == "track-a1");
 
-        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var db = sp.GetRequiredService<AppDbContext>();
         var history = await db.TrackHistories.ToListAsync();
         Assert.Single(history);
         Assert.Equal("track-a2", history[0].SpotifyTrackId);
@@ -164,7 +164,7 @@ public sealed class JobOrchestratorTests
         };
 
         var sp = BuildTestServices(albums);
-        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var db = sp.GetRequiredService<AppDbContext>();
         db.ProcessedAlbums.Add(new ProcessedAlbum
         {
             Id = Guid.CreateVersion7(),
@@ -202,7 +202,7 @@ public sealed class JobOrchestratorTests
         };
 
         var sp = BuildTestServices(albums);
-        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var db = sp.GetRequiredService<AppDbContext>();
         db.TrackHistories.Add(new TrackHistory
         {
             Id = Guid.CreateVersion7(),
@@ -262,7 +262,7 @@ public sealed class JobOrchestratorTests
         Assert.Contains(mock.PlaylistTracks, t => t.Id == "track-b1");
         Assert.DoesNotContain(mock.PlaylistTracks, t => t.Id == "track-a1");
 
-        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var db = sp.GetRequiredService<AppDbContext>();
         var history = await db.TrackHistories.ToListAsync();
         Assert.Empty(history);
 
