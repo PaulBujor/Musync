@@ -5,7 +5,7 @@ using SpotifyTools.Infrastructure.Persistence;
 namespace SpotifyTools.Jobs;
 
 public sealed class JobOrchestrator(
-    SpotifyDbContext db,
+    AppDbContext db,
     SyncStep1_SnapshotAndDiff step1,
     SyncStep2_AddNewTracks step2,
     SyncStep3_GenerateReport step3,

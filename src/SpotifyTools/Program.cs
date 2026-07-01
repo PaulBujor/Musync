@@ -27,8 +27,8 @@ builder.Services
     .ValidateDataAnnotations();
 
 builder.Services.AddHybridCache();
-builder.Services.AddDbContext<SpotifyDbContext>(options =>
-    options.UseSqlite("Data Source=spotifyqueue.db;Cache=Shared;"));
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Default")!));
 
 // Sync job steps
 builder.Services.AddScoped<SyncStep1_SnapshotAndDiff>();
@@ -99,7 +99,7 @@ var host = builder.Build();
 
 using (var scope = host.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<SpotifyDbContext>();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.MigrateAsync();
 }
 

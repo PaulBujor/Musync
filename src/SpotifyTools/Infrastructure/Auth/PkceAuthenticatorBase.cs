@@ -12,7 +12,7 @@ using SpotifyTools.Infrastructure.Persistence;
 namespace SpotifyTools.Infrastructure.Auth;
 
 public abstract class PkceAuthenticatorBase(
-    SpotifyDbContext db,
+    AppDbContext db,
     ILogger logger,
     HttpClient httpClient) : IAuthenticator
 {

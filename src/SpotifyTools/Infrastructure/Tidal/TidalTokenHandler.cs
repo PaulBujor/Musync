@@ -10,7 +10,7 @@ namespace SpotifyTools.Infrastructure.Tidal;
 public sealed class TidalTokenHandler(
     IOptions<TidalOptions> options,
     ITidalAuthenticator authenticator,
-    SpotifyDbContext db,
+    AppDbContext db,
     ILogger<TidalTokenHandler> logger)
     : TokenHandlerBase(db, logger, authenticator)
 {

@@ -83,7 +83,7 @@ This command:
 
 ## Authentication
 
-First run uses PKCE OAuth: a browser window opens, you authorise the app, and the refresh token is stored in the SQLite database. Subsequent runs use the stored token silently. If a provider rotates the refresh token, it's persisted immediately to the database.
+First run uses PKCE OAuth: a browser window opens, you authorise the app, and the refresh token is stored in the database. Subsequent runs use the stored token silently. If a provider rotates the refresh token, it's persisted immediately to the database.
 
 ## How It Works
 
@@ -163,7 +163,7 @@ SpotifyTools.slnx
 │   │   ├── Mapping/          # SpotifySearchMapper (ISRC + by-name fallback)
 │   │   ├── Spotify/          # Spotify API client, auth, token handler, models
 │   │   ├── Tidal/            # Tidal API client, auth, token handler, models
-│   │   └── Persistence/      # EF Core DbContext, migrations, repos
+│   │   └── Persistence/      # EF Core AppDbContext, migrations, repos
 │   ├── Jobs/                 # Orchestrators + step classes (sync, import-tidal)
 │   └── Migrations/           # EF Core migrations
 └── tests/SpotifyTools.Tests/
@@ -177,13 +177,14 @@ SpotifyTools.slnx
 dotnet test
 ```
 
-Tests use a real SQLite in-memory database (not `UseInMemoryDatabase`) and `LocalMockMusicProvider` — no HTTP calls, no credentials required.
+Tests use a real SQLite in-memory database (separate from the production PostgreSQL setup) and `LocalMockMusicProvider` — no HTTP calls, no credentials required.
 
 ## Tech Stack
 
 - .NET 10 / C#
 - System.CommandLine (v2)
-- Entity Framework Core + SQLite (WAL mode)
+- Entity Framework Core + PostgreSQL
+- Npgsql.EntityFrameworkCore.PostgreSQL
 - Microsoft.Extensions.Http.Resilience (Polly)
 - IHybridCache (in-process)
 - xunit

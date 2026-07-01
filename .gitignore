@@ -8,7 +8,8 @@ riderModule.iml
 appsettings.Development.json
 .env
 
-# SQLite databases
+# Database files
+Data/
 *.db
 *.db-shm
 *.db-wal

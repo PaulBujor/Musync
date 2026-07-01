@@ -5,7 +5,7 @@ using SpotifyTools.Infrastructure.Persistence;
 namespace SpotifyTools.Jobs;
 
 public sealed class ImportTidalOrchestrator(
-    SpotifyDbContext db,
+    AppDbContext db,
     ImportTidalStep1_FetchAndMap step1,
     ImportTidalStep2_AddToQueue step2,
     ImportTidalStep3_GenerateReport step3,

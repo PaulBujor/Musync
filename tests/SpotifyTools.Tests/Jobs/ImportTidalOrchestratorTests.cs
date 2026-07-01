@@ -21,7 +21,7 @@ public sealed class ImportTidalOrchestratorTests
     {
         var services = new ServiceCollection();
 
-        services.AddDbContext<SpotifyDbContext>(options =>
+        services.AddDbContext<AppDbContext>(options =>
             options.UseSqlite("Data Source=:memory:"));
 
         services.AddHybridCache();
@@ -56,14 +56,14 @@ public sealed class ImportTidalOrchestratorTests
 
         var sp = services.BuildServiceProvider();
 
-        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var db = sp.GetRequiredService<AppDbContext>();
         db.Database.OpenConnection();
         db.Database.EnsureCreated();
 
         return sp;
     }
 
-    private static async Task<JobRun?> GetLatestJobRunAsync(SpotifyDbContext db)
+    private static async Task<JobRun?> GetLatestJobRunAsync(AppDbContext db)
     {
         return await db.JobRuns.OrderByDescending(x => x.StartedAt).FirstOrDefaultAsync();
     }
@@ -75,7 +75,7 @@ public sealed class ImportTidalOrchestratorTests
         var orchestrator = sp.GetRequiredService<ImportTidalOrchestrator>();
         await orchestrator.RunAsync(CancellationToken.None);
 
-        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var db = sp.GetRequiredService<AppDbContext>();
         var latest = await GetLatestJobRunAsync(db);
         Assert.NotNull(latest);
         Assert.Equal("succeeded", latest.Status);
@@ -99,7 +99,7 @@ public sealed class ImportTidalOrchestratorTests
         Assert.Contains(mock.PlaylistTracks, t => t.Id == "spotify-track-1");
         Assert.Contains(mock.PlaylistTracks, t => t.Id == "spotify-track-2");
 
-        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var db = sp.GetRequiredService<AppDbContext>();
         var history = await db.TrackHistories.ToListAsync();
         Assert.Equal(2, history.Count);
         Assert.Contains(history, h => h.SpotifyTrackId == "spotify-track-1");
@@ -125,7 +125,7 @@ public sealed class ImportTidalOrchestratorTests
         };
 
         var sp = BuildTestServices(tidalTracks: tidalTracks);
-        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var db = sp.GetRequiredService<AppDbContext>();
         db.TrackHistories.Add(new TrackHistory
         {
             Id = Guid.CreateVersion7(),
@@ -167,7 +167,7 @@ public sealed class ImportTidalOrchestratorTests
         Assert.Single(mock.PlaylistTracks);
         Assert.Contains(mock.PlaylistTracks, t => t.Id == "spotify-track-1");
 
-        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var db = sp.GetRequiredService<AppDbContext>();
         var mappings = await db.TidalTrackMappings.ToListAsync();
         Assert.Equal(2, mappings.Count);
         Assert.Contains(mappings, m => m.TidalTrackId == "tidal-unknown" && m.SpotifyTrackId == "");
@@ -186,7 +186,7 @@ public sealed class ImportTidalOrchestratorTests
         };
 
         var sp = BuildTestServices(tidalTracks: tidalTracks);
-        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var db = sp.GetRequiredService<AppDbContext>();
         db.TidalTrackMappings.Add(new TidalTrackMapping
         {
             Id = Guid.CreateVersion7(),
@@ -234,7 +234,7 @@ public sealed class ImportTidalOrchestratorTests
         Assert.Contains(mock.PlaylistTracks, t => t.Id == "spotify-track-2");
         Assert.DoesNotContain(mock.PlaylistTracks, t => t.Id == "spotify-track-1");
 
-        var db = sp.GetRequiredService<SpotifyDbContext>();
+        var db = sp.GetRequiredService<AppDbContext>();
         var latest = await GetLatestJobRunAsync(db);
         Assert.NotNull(latest);
         Assert.Equal(1, latest.TracksAdded);

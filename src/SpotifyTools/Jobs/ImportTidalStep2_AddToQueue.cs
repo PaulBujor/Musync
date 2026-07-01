@@ -11,7 +11,7 @@ namespace SpotifyTools.Jobs;
 
 public sealed class ImportTidalStep2_AddToQueue(
     IMusicProvider spotifyMusic,
-    SpotifyDbContext db,
+    AppDbContext db,
     HybridCache cache,
     IOptions<SpotifyOptions> options,
     ILogger<ImportTidalStep2_AddToQueue> logger)
