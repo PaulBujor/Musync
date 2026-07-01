@@ -9,7 +9,7 @@ appsettings.Development.json
 .env
 
 # Database files
-data/
+Data/
 *.db
 *.db-shm
 *.db-wal
