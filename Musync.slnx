@@ -1,0 +1,8 @@
+<Solution>
+    <Folder Name="/src/">
+        <Project Path="src/Musync/Musync.csproj"/>
+    </Folder>
+    <Folder Name="/tests/">
+        <Project Path="tests/Musync.Tests/Musync.Tests.csproj"/>
+    </Folder>
+</Solution>

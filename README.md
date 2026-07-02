@@ -1,4 +1,4 @@
-# SpotifyTools
+# Musync
 
 A CLI tool that syncs your saved Spotify albums into a queue playlist, and can import playlists from other music services.
 
@@ -41,7 +41,7 @@ Spotify__QueuePlaylistId=your-playlist-id
 
 ```bash
 # Direct
-dotnet run --project src/SpotifyTools
+dotnet run --project src/Musync
 
 # Docker
 docker compose up
@@ -56,7 +56,7 @@ On first run, your browser opens for Spotify OAuth. After authorising, the tool 
 Syncs your saved Spotify albums into the configured queue playlist.
 
 ```bash
-dotnet run --project src/SpotifyTools sync
+dotnet run --project src/Musync sync
 ```
 
 Runs four steps: snapshot & diff, add new tracks, (transparent token refresh), report.
@@ -66,12 +66,12 @@ Runs four steps: snapshot & diff, add new tracks, (transparent token refresh), r
 Imports a Tidal playlist into your Spotify queue playlist.
 
 ```bash
-dotnet run --project src/SpotifyTools import-tidal <playlist-url>
+dotnet run --project src/Musync import-tidal <playlist-url>
 ```
 
 Example:
 ```bash
-dotnet run --project src/SpotifyTools import-tidal https://tidal.com/browse/playlist/abc123
+dotnet run --project src/Musync import-tidal https://tidal.com/browse/playlist/abc123
 ```
 
 This command:
@@ -150,8 +150,8 @@ Settings come from `appsettings.json` (checked in, safe defaults) overridden by 
 ## Project Structure
 
 ```
-SpotifyTools.slnx
-├── src/SpotifyTools/
+Musync.slnx
+├── src/Musync/
 │   ├── Program.cs
 │   ├── appsettings.json
 │   ├── Options/              # Strongly-typed options records (ProviderOptionsBase, SpotifyOptions, TidalOptions)
@@ -166,7 +166,7 @@ SpotifyTools.slnx
 │   │   └── Persistence/      # EF Core AppDbContext, migrations, repos
 │   ├── Jobs/                 # Orchestrators + step classes (sync, import-tidal)
 │   └── Migrations/           # EF Core migrations
-└── tests/SpotifyTools.Tests/
+└── tests/Musync.Tests/
     ├── Fakes/                # LocalMockMusicProvider, LocalMockTrackMapper
     └── Jobs/                 # Unit tests (sync + import-tidal)
 ```
