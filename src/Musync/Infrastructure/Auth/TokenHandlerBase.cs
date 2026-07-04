@@ -130,15 +130,18 @@ public abstract class TokenHandlerBase(
             }
             catch (JsonException)
             {
+                logger.LogWarning(
+                    "{Provider} refresh error response was not valid JSON: {Body}",
+                    ProviderName, body);
             }
         }
 
         response.EnsureSuccessStatusCode();
 
-        using var doc2 = await JsonDocument.ParseAsync(
+        using var refreshDoc = await JsonDocument.ParseAsync(
             await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
 
-        var root = doc2.RootElement;
+        var root = refreshDoc.RootElement;
         _accessToken = root.GetProperty("access_token").GetString()!;
         var expiresIn = root.GetProperty("expires_in").GetInt32();
         _tokenExpiry = DateTime.UtcNow.AddSeconds(expiresIn - 60);
