@@ -1,0 +1,14 @@
+services:
+  musync:
+    image: musync
+    build:
+      context: .
+      dockerfile: src/Musync/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Postgres: "Host=postgres;Database=musync;Username=musync;Password=musync"
+      ConnectionStrings__Valkey: "valkey:6379"

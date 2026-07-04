@@ -29,7 +29,7 @@ builder.Services
 builder.Services.AddHybridCache();
 builder.Services.AddStackExchangeRedisCache(options =>
 {
-    options.Configuration = builder.Configuration.GetConnectionString("Valkey") ?? "localhost:6379";
+    options.Configuration = builder.Configuration.GetConnectionString("Valkey");
 });
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")!));
