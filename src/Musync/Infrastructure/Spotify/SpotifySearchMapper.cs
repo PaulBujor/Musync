@@ -32,7 +32,7 @@ public sealed class SpotifySearchMapper(
         var response = await http.GetAsync(url, ct);
         if (!response.IsSuccessStatusCode)
         {
-            Log.SearchFailed(logger, (int)response.StatusCode, query);
+            logger.LogWarning("Track search failed: {StatusCode} for query '{Query}'", (int)response.StatusCode, query);
             return null;
         }
 
@@ -48,10 +48,4 @@ public sealed class SpotifySearchMapper(
 
         return items[0].GetProperty("id").GetString();
     }
-}
-
-public static partial class Log
-{
-    [LoggerMessage(LogLevel.Warning, "Track search failed: {StatusCode} for query '{Query}'")]
-    public static partial void SearchFailed(ILogger logger, int statusCode, string query);
 }
