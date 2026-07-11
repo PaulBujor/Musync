@@ -27,8 +27,12 @@ builder.Services
     .ValidateDataAnnotations();
 
 builder.Services.AddHybridCache();
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("Valkey");
+});
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Default")!));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")!));
 
 // Sync job steps
 builder.Services.AddScoped<SyncStep1_SnapshotAndDiff>();

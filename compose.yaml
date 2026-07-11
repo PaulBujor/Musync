@@ -15,14 +15,16 @@
       timeout: 5s
       retries: 5
 
-  musync:
-    image: musync
-    build:
-      context: .
-      dockerfile: src/Musync/Dockerfile
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      ConnectionStrings__Default: "Host=postgres;Database=musync;Username=musync;Password=musync"
+  valkey:
+    image: valkey/valkey:9
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./Data/valkey:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
 
