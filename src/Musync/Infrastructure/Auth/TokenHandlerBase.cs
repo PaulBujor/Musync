@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -30,7 +31,7 @@ public abstract class TokenHandlerBase(
 
         var response = await base.SendAsync(request, ct);
 
-        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
             logger.LogWarning("Received 401. Forcing {Provider} token refresh...", ProviderName);
             _accessToken = null;
@@ -67,7 +68,24 @@ public abstract class TokenHandlerBase(
                     .FirstOrDefaultAsync(ct);
             }
 
-            await RefreshAccessTokenAsync(existingToken!.Token, ct);
+            var refreshed = await TryRefreshAccessTokenAsync(existingToken!.Token, ct);
+            if (!refreshed)
+            {
+                logger.LogWarning("{Provider} refresh token expired. Re-authenticating...", ProviderName);
+
+                await authenticator.EnsureAuthenticatedAsync(ct);
+
+                var newToken = await db.RefreshTokens
+                    .Where(x => x.Provider == ProviderName)
+                    .OrderByDescending(x => x.UpdatedAt)
+                    .FirstOrDefaultAsync(ct);
+
+                if (newToken is null)
+                    throw new InvalidOperationException(
+                        $"Failed to obtain a new {ProviderName} refresh token after expiry.");
+
+                await TryRefreshAccessTokenAsync(newToken.Token, ct);
+            }
         }
         finally
         {
@@ -75,17 +93,55 @@ public abstract class TokenHandlerBase(
         }
     }
 
-    private async Task RefreshAccessTokenAsync(string refreshToken, CancellationToken ct)
+    private async Task<bool> TryRefreshAccessTokenAsync(string refreshToken, CancellationToken ct)
     {
         var request = CreateRefreshRequest(refreshToken);
 
         var response = await base.SendAsync(request, ct);
+
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+        {
+            var body = await response.Content.ReadAsStringAsync(ct);
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("error", out var errorProp))
+                {
+                    var error = errorProp.GetString();
+                    if (error == "invalid_grant")
+                    {
+                        logger.LogWarning(
+                            "{Provider} refresh token rejected (invalid_grant). Deleting expired token...",
+                            ProviderName);
+
+                        var expired = await db.RefreshTokens
+                            .Where(x => x.Provider == ProviderName)
+                            .OrderByDescending(x => x.UpdatedAt)
+                            .FirstOrDefaultAsync(ct);
+                        if (expired is not null)
+                        {
+                            db.RefreshTokens.Remove(expired);
+                            await db.SaveChangesAsync(ct);
+                        }
+
+                        return false;
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                logger.LogWarning(
+                    "{Provider} refresh error response was not valid JSON: {Body}",
+                    ProviderName, body);
+            }
+        }
+
         response.EnsureSuccessStatusCode();
 
-        using var doc = await JsonDocument.ParseAsync(
+        using var refreshDoc = await JsonDocument.ParseAsync(
             await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
 
-        var root = doc.RootElement;
+        var root = refreshDoc.RootElement;
         _accessToken = root.GetProperty("access_token").GetString()!;
         var expiresIn = root.GetProperty("expires_in").GetInt32();
         _tokenExpiry = DateTime.UtcNow.AddSeconds(expiresIn - 60);
@@ -116,5 +172,7 @@ public abstract class TokenHandlerBase(
             }
             await db.SaveChangesAsync(ct);
         }
+
+        return true;
     }
 }
