@@ -24,8 +24,11 @@ public sealed class ImportOrchestrator(
             Limit = ctx.Limit
         };
 
-        db.JobRuns.Add(jobRun);
-        await db.SaveChangesAsync(ct);
+        if (!ctx.DryRun)
+        {
+            db.JobRuns.Add(jobRun);
+            await db.SaveChangesAsync(ct);
+        }
 
         using var _ = logger.BeginScope(new { JobRunId = jobRun.Id.ToString() });
         Log.StartingJob(logger, $"import --source {ctx.SourceProviderName}", ctx.TargetProviderName, jobRun.Id.ToString());

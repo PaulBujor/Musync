@@ -199,8 +199,8 @@ public sealed class ImportOrchestratorTests
         Assert.Contains(target.PlaylistTracks, t => t.Id == "spotify-track-1");
 
         var mappings = await db.TrackMappings.ToListAsync();
-        Assert.Equal(2, mappings.Count);
-        Assert.Contains(mappings, m => m.SourceTrackId == "tidal-unknown" && m.TargetTrackId == "");
+        Assert.Single(mappings);
+        Assert.Contains(mappings, m => m.SourceTrackId == "tidal-1" && m.TargetTrackId == "spotify-track-1");
 
         var latest = await GetLatestJobRunAsync(db);
         Assert.NotNull(latest);
@@ -313,9 +313,7 @@ public sealed class ImportOrchestratorTests
         Assert.Empty(await db.TrackMappings.ToListAsync());
 
         var latest = await GetLatestJobRunAsync(db);
-        Assert.NotNull(latest);
-        Assert.Equal("dry-run", latest.Status);
-        Assert.True(latest.DryRun);
+        Assert.Null(latest);
     }
 
     [Fact]
@@ -341,5 +339,29 @@ public sealed class ImportOrchestratorTests
         Assert.NotNull(latest);
         Assert.Equal(1, latest.TracksAdded);
         Assert.Equal(1, latest.Limit);
+    }
+
+    [Fact]
+    public async Task RunAsync_Limit0_ImportsNothing()
+    {
+        var tidalTracks = new List<Track>
+        {
+            new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
+            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002"),
+        };
+
+        var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
+        var target = new LocalMockMusicProvider();
+        var mapper = new LocalMockTrackMapper();
+
+        var sp = await RunAsync(source, target, mapper, limit: 0);
+        var db = sp.GetRequiredService<AppDbContext>();
+
+        Assert.Empty(target.PlaylistTracks);
+        Assert.Empty(await db.TrackHistories.ToListAsync());
+
+        var latest = await GetLatestJobRunAsync(db);
+        Assert.NotNull(latest);
+        Assert.Equal(0, latest.TracksAdded);
     }
 }

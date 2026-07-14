@@ -8,4 +8,7 @@ public record SyncRunContext(
     string PlaylistId,
     int MaxDegreeOfParallelism,
     bool DryRun,
-    int? Limit);
+    int? Limit)
+{
+    public int QueueSizeAfterStep1 { get; set; }
+}

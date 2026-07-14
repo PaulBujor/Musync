@@ -24,8 +24,11 @@ public sealed class QueueAlbumsOrchestrator(
             Limit = ctx.Limit
         };
 
-        db.JobRuns.Add(jobRun);
-        await db.SaveChangesAsync(ct);
+        if (!ctx.DryRun)
+        {
+            db.JobRuns.Add(jobRun);
+            await db.SaveChangesAsync(ct);
+        }
 
         using var _ = logger.BeginScope(new { JobRunId = jobRun.Id.ToString() });
         Log.StartingJob(logger, "queue-albums", ctx.ProviderName, jobRun.Id.ToString());

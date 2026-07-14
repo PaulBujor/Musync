@@ -41,21 +41,24 @@ public sealed class ImportStep1_FetchAndMap(
             }
             else
             {
-                db.TrackMappings.Add(new TrackMapping
-                {
-                    Id = Guid.CreateVersion7(),
-                    SourceProvider = ctx.SourceProviderName,
-                    SourceTrackId = sourceId,
-                    TargetProvider = ctx.TargetProviderName,
-                    TargetTrackId = targetId ?? "",
-                    Isrc = sourceTrack.Isrc ?? "",
-                    FirstMappedAt = DateTime.UtcNow
-                });
-
                 if (targetId is not null)
+                {
+                    db.TrackMappings.Add(new TrackMapping
+                    {
+                        Id = Guid.CreateVersion7(),
+                        SourceProvider = ctx.SourceProviderName,
+                        SourceTrackId = sourceId,
+                        TargetProvider = ctx.TargetProviderName,
+                        TargetTrackId = targetId,
+                        Isrc = sourceTrack.Isrc ?? "",
+                        FirstMappedAt = DateTime.UtcNow
+                    });
                     candidates.Add((targetId, sourceTrack));
+                }
                 else
+                {
                     Log.TrackNotMapped(logger, sourceTrack.Name, sourceTrack.Artist);
+                }
             }
         }
 

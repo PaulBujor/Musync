@@ -84,9 +84,9 @@ if (!string.IsNullOrEmpty(tidalConfig.ApiBaseUrl))
             sp.GetRequiredService<IHttpClientFactory>().CreateClient("tidal-music")));
 }
 
-// Track mapper
+// Track mapper — keyed by target provider
 builder.Services
-    .AddHttpClient<ITrackMapper, SpotifySearchMapper>((sp, client) =>
+    .AddHttpClient("track-mapper", (sp, client) =>
     {
         var opts = sp.GetRequiredService<IOptions<SpotifyOptions>>().Value;
         client.BaseAddress = new Uri(opts.ApiBaseUrl);
@@ -96,6 +96,13 @@ builder.Services
     {
         options.Retry.MaxRetryAttempts = 3;
     });
+builder.Services.AddKeyedSingleton<ITrackMapper>("spotify", (sp, _) =>
+{
+    var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("track-mapper");
+    var logger = sp.GetRequiredService<ILogger<SpotifySearchMapper>>();
+    return new SpotifySearchMapper(httpClient, logger);
+});
+builder.Services.AddKeyedSingleton<ITrackMapper>("tidal", (_, _) => new TidalSearchMapper());
 
 var host = builder.Build();
 
@@ -131,12 +138,14 @@ spotifyCmd.Add(spotifyQueueAlbums);
 var tidalQueueAlbums = new Command("queue-albums", "Sync saved albums to the queue playlist");
 tidalCmd.Add(tidalQueueAlbums);
 
-var spotifySourceOption = new Option<string>("--source", "Source provider to import from");
+var spotifySourceOption = new Option<string>("--source", "Source provider to import from")
+    .AcceptOnlyFromAmong("spotify", "tidal");
 var spotifyImport = new Command("import", "Import tracks from another provider");
 spotifyImport.Add(spotifySourceOption);
 spotifyCmd.Add(spotifyImport);
 
-var tidalSourceOption = new Option<string>("--source", "Source provider to import from");
+var tidalSourceOption = new Option<string>("--source", "Source provider to import from")
+    .AcceptOnlyFromAmong("spotify", "tidal");
 var tidalImport = new Command("import", "Import tracks from another provider");
 tidalImport.Add(tidalSourceOption);
 tidalCmd.Add(tidalImport);
@@ -196,7 +205,8 @@ if (invokedCommand == syncCommand)
 {
     var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Musync");
     Log.DeprecatedCommand(logger, "sync", "spotify queue-albums");
-    return await RunQueueAlbumsAsync("spotify", dryRun, limit, host.Services, cts.Token);
+    var result = await RunQueueAlbumsAsync("spotify", dryRun, limit, host.Services, cts.Token);
+    return result == 0 ? 3 : result;
 }
 
 // Deprecated: import-tidal → spotify import --source tidal
@@ -204,7 +214,8 @@ if (invokedCommand == importTidalCommand)
 {
     var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Musync");
     Log.DeprecatedCommand(logger, "import-tidal", "spotify import --source tidal");
-    return await RunImportAsync("spotify", "tidal", dryRun, limit, host.Services, cts.Token);
+    var result = await RunImportAsync("spotify", "tidal", dryRun, limit, host.Services, cts.Token);
+    return result == 0 ? 3 : result;
 }
 
 return 0;
@@ -219,7 +230,14 @@ static async Task<int> RunQueueAlbumsAsync(
     CancellationToken ct)
 {
     await using var scope = services.CreateAsyncScope();
-    var provider = scope.ServiceProvider.GetRequiredKeyedService<IMusicProvider>(providerKey);
+    var provider = scope.ServiceProvider.GetKeyedService<IMusicProvider>(providerKey);
+    if (provider is null)
+    {
+        await Console.Error.WriteLineAsync(
+            $"Provider '{providerKey}' is not configured. Check appsettings.json.");
+        return 1;
+    }
+
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var step1 = scope.ServiceProvider.GetRequiredService<SyncStep1_SnapshotAndDiff>();
     var step2 = scope.ServiceProvider.GetRequiredService<SyncStep2_AddNewTracks>();
@@ -239,7 +257,7 @@ static async Task<int> RunQueueAlbumsAsync(
     {
         var opts = scope.ServiceProvider.GetRequiredService<IOptions<TidalOptions>>().Value;
         playlistId = opts.QueuePlaylistId;
-        maxParallelism = 3;
+        maxParallelism = opts.MaxConcurrentRequests;
     }
     else
     {
@@ -293,9 +311,31 @@ static async Task<int> RunImportAsync(
     }
 
     await using var scope = services.CreateAsyncScope();
-    var targetProvider = scope.ServiceProvider.GetRequiredKeyedService<IMusicProvider>(targetProviderKey);
-    var sourceProvider = scope.ServiceProvider.GetRequiredKeyedService<IMusicProvider>(sourceProviderKey);
-    var mapper = scope.ServiceProvider.GetRequiredService<ITrackMapper>();
+
+    var targetProvider = scope.ServiceProvider.GetKeyedService<IMusicProvider>(targetProviderKey);
+    if (targetProvider is null)
+    {
+        await Console.Error.WriteLineAsync(
+            $"Provider '{targetProviderKey}' is not configured. Check appsettings.json.");
+        return 1;
+    }
+
+    var sourceProvider = scope.ServiceProvider.GetKeyedService<IMusicProvider>(sourceProviderKey);
+    if (sourceProvider is null)
+    {
+        await Console.Error.WriteLineAsync(
+            $"Provider '{sourceProviderKey}' is not configured. Check appsettings.json.");
+        return 1;
+    }
+
+    var mapper = scope.ServiceProvider.GetKeyedService<ITrackMapper>(targetProviderKey);
+    if (mapper is null)
+    {
+        await Console.Error.WriteLineAsync(
+            $"Track mapper for '{targetProviderKey}' is not available.");
+        return 1;
+    }
+
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var step1 = scope.ServiceProvider.GetRequiredService<ImportStep1_FetchAndMap>();
     var step2 = scope.ServiceProvider.GetRequiredService<ImportStep2_AddToQueue>();

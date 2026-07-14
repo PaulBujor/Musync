@@ -88,21 +88,18 @@ public sealed class ImportStep2_AddToQueue(
                 TrackId = t.TargetTrackId,
                 TrackName = t.SourceTrack.Name,
                 ArtistName = t.SourceTrack.Artist,
+                // Source-provenance: may differ from target provider metadata
                 AlbumName = t.SourceTrack.Album,
                 AddedAt = DateTime.UtcNow
             });
             db.TrackHistories.AddRange(historyEntries);
+
+            using var transaction = await db.Database.BeginTransactionAsync(ct);
             await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
         }
 
         jobRun.TracksAdded = addedCount;
-
-        var finalIds = new List<string>();
-        await foreach (var track in ctx.Target.GetPlaylistTracksAsync(ctx.PlaylistId, ct))
-            finalIds.Add(track.Id);
-        jobRun.QueueSizeAfter = finalIds.Count;
-
-        if (!ctx.DryRun)
-            await db.SaveChangesAsync(ct);
+        jobRun.QueueSizeAfter = currentPlaylistIds.Count + addedCount;
     }
 }

@@ -32,17 +32,19 @@ public sealed class SyncStep2_AddNewTracks(
             .Distinct()
             .ToHashSetAsync(ct);
 
-        var processedAlbumIdsTask = db.ProcessedAlbums
+        var processedAlbumsTask = db.ProcessedAlbums
             .Where(x => x.Provider == ctx.ProviderName)
-            .Select(a => a.AlbumId)
-            .ToHashSetAsync(ct);
+            .ToListAsync(ct);
 
         var likedTrackIds = await likedTrackIdsTask;
         var historyTrackIds = await historyTrackIdsTask;
-        var processedAlbumIds = await processedAlbumIdsTask;
+        var processedAlbums = await processedAlbumsTask;
+        var processedAlbumIds = processedAlbums.Select(a => a.AlbumId).ToHashSet();
+        var processedAlbumDict = processedAlbums.ToDictionary(a => a.AlbumId);
 
         var newTracks = new List<Track>();
         var newlyProcessedAlbums = new List<ProcessedAlbum>();
+        var updatedProcessedAlbums = new List<ProcessedAlbum>();
         var albumsProcessed = 0;
         var tracksSkipped = 0;
         var limitHit = false;
@@ -63,7 +65,17 @@ public sealed class SyncStep2_AddNewTracks(
                 }
 
                 if (processedAlbumIds.Contains(album.Id))
+                {
+                    lock (lockObj)
+                    {
+                        if (processedAlbumDict.TryGetValue(album.Id, out var existing))
+                        {
+                            existing.LastSeenAt = DateTime.UtcNow;
+                            updatedProcessedAlbums.Add(existing);
+                        }
+                    }
                     return;
+                }
 
                 Log.ProcessingAlbum(logger, album.Name, album.Artist);
 
@@ -135,7 +147,6 @@ public sealed class SyncStep2_AddNewTracks(
                 });
 
                 db.TrackHistories.AddRange(historyEntries);
-                await db.SaveChangesAsync(ct);
             }
 
             jobRun.TracksAdded = newTracks.Count;
@@ -143,25 +154,24 @@ public sealed class SyncStep2_AddNewTracks(
 
         jobRun.NewAlbumsEncountered = albumsProcessed;
 
-        if (newlyProcessedAlbums.Count > 0)
+        if (!ctx.DryRun)
         {
-            if (ctx.DryRun)
-            {
-                Log.DryRunWouldSaveAlbums(logger, newlyProcessedAlbums.Count);
-            }
-            else
-            {
+            using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+            if (newlyProcessedAlbums.Count > 0)
                 db.ProcessedAlbums.AddRange(newlyProcessedAlbums);
-                await db.SaveChangesAsync(ct);
-            }
+
+            if (updatedProcessedAlbums.Count > 0)
+                db.ProcessedAlbums.UpdateRange(updatedProcessedAlbums);
+
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        else if (newlyProcessedAlbums.Count > 0)
+        {
+            Log.DryRunWouldSaveAlbums(logger, newlyProcessedAlbums.Count);
         }
 
-        var currentPlaylistTrackIds = new List<string>();
-        await foreach (var track in ctx.Target.GetPlaylistTracksAsync(ctx.PlaylistId, ct))
-            currentPlaylistTrackIds.Add(track.Id);
-        jobRun.QueueSizeAfter = currentPlaylistTrackIds.Count;
-
-        if (!ctx.DryRun)
-            await db.SaveChangesAsync(ct);
+        jobRun.QueueSizeAfter = ctx.QueueSizeAfterStep1 + newTracks.Count;
     }
 }

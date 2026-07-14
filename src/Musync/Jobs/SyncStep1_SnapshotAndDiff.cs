@@ -59,7 +59,6 @@ public sealed class SyncStep1_SnapshotAndDiff(
                     entry.RemovedAt = now;
                     entry.RemovalReason = "liked";
                 }
-                await db.SaveChangesAsync(ct);
             }
 
             jobRun.TracksRemovedLiked = likedInPlaylist.Count;
@@ -87,16 +86,19 @@ public sealed class SyncStep1_SnapshotAndDiff(
                     entry.RemovedAt = now;
                     entry.RemovalReason = "manual";
                 }
-                await db.SaveChangesAsync(ct);
             }
 
             jobRun.TracksRemovedManual = manualRemovals.Count;
         }
 
-        jobRun.QueueSizeAfter = currentTrackIds.Count - likedInPlaylist.Count;
+        ctx.QueueSizeAfterStep1 = currentTrackIds.Count - likedInPlaylist.Count;
 
-        if (!ctx.DryRun)
+        if (!ctx.DryRun && (likedInPlaylist.Count > 0 || manualRemovals.Count > 0))
+        {
+            using var transaction = await db.Database.BeginTransactionAsync(ct);
             await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
     }
 
     private async Task<List<Track>> FetchPlaylistAsync(SyncRunContext ctx, CancellationToken ct)

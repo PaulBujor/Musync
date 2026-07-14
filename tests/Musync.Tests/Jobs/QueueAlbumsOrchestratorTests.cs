@@ -349,9 +349,7 @@ public sealed class QueueAlbumsOrchestratorTests
         Assert.Empty(await db.ProcessedAlbums.ToListAsync());
 
         var latest = await GetLatestJobRunAsync(db);
-        Assert.NotNull(latest);
-        Assert.Equal("dry-run", latest.Status);
-        Assert.True(latest.DryRun);
+        Assert.Null(latest);
     }
 
     [Fact]
