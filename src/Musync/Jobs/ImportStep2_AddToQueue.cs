@@ -55,29 +55,27 @@ public sealed class ImportStep2_AddToQueue(
             newTracks.Add((targetId, sourceTrack));
         }
 
+        if (ctx.Limit.HasValue && newTracks.Count > ctx.Limit.Value)
+        {
+            newTracks = newTracks.Take(ctx.Limit.Value).ToList();
+            Log.LimitReached(logger, ctx.Limit.Value);
+        }
+
         if (newTracks.Count == 0)
         {
             Log.AllMappedTracksAlreadyInQueue(logger);
             return;
         }
 
-        var addedCount = newTracks.Count;
-        if (ctx.Limit.HasValue && addedCount > ctx.Limit.Value)
-        {
-            addedCount = ctx.Limit.Value;
-            newTracks = newTracks.Take(addedCount).ToList();
-            Log.LimitReached(logger, ctx.Limit.Value);
-        }
-
         if (ctx.DryRun)
         {
-            Log.DryRunWouldAdd(logger, addedCount, ctx.PlaylistId);
-            Log.DryRunWouldSaveHistory(logger, addedCount);
+            Log.DryRunWouldAdd(logger, newTracks.Count, ctx.PlaylistId);
+            Log.DryRunWouldSaveHistory(logger, newTracks.Count);
         }
         else
         {
             var trackUris = newTracks.Select(t => t.TargetTrackId);
-            Log.AddingTracks(logger, addedCount, ctx.PlaylistId);
+            Log.AddingTracks(logger, newTracks.Count, ctx.PlaylistId);
             await ctx.Target.AddTracksToPlaylistAsync(ctx.PlaylistId, trackUris, ct);
 
             var historyEntries = newTracks.Select(t => new TrackHistory
@@ -99,7 +97,7 @@ public sealed class ImportStep2_AddToQueue(
             await transaction.CommitAsync(ct);
         }
 
-        jobRun.TracksAdded = addedCount;
-        jobRun.QueueSizeAfter = currentPlaylistIds.Count + addedCount;
+        jobRun.TracksAdded = newTracks.Count;
+        jobRun.QueueSizeAfter = currentPlaylistIds.Count + newTracks.Count;
     }
 }
