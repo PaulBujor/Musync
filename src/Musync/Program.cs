@@ -29,8 +29,30 @@ builder.Services
     .ValidateDataAnnotations();
 
 builder.Services.AddHybridCache();
+
+// Database provider selection
+builder.Services
+    .AddOptions<DatabaseOptions>()
+    .BindConfiguration("Database")
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+var dbProvider = builder.Configuration.GetValue<string>("Database:Provider") ?? "Sqlite";
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")!));
+{
+    switch (dbProvider)
+    {
+        case "Postgres":
+            options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")!);
+            break;
+        case "Sqlite":
+            options.UseSqlite(builder.Configuration.GetConnectionString("Sqlite")!);
+            break;
+        default:
+            throw new InvalidOperationException($"Unsupported database provider: {dbProvider}");
+    }
+});
 
 // Step classes (providers come via RunContext, not DI)
 builder.Services.AddScoped<SyncStep1_SnapshotAndDiff>();
@@ -109,7 +131,21 @@ var host = builder.Build();
 using (var scope = host.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.MigrateAsync();
+    var provider = scope.ServiceProvider.GetRequiredService<IOptions<DatabaseOptions>>().Value.Provider;
+
+    if (provider == "Sqlite")
+    {
+        db.Database.EnsureCreated();
+        using var connection = db.Database.GetDbConnection();
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "PRAGMA journal_mode=WAL;";
+        cmd.ExecuteScalar();
+    }
+    else
+    {
+        await db.Database.MigrateAsync();
+    }
 }
 
 using var cts = new CancellationTokenSource();

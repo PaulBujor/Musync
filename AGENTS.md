@@ -42,7 +42,8 @@ dotnet add src/Musync package System.CommandLine
 
 ## Key Patterns
 
-- **Provider selection**: Always Spotify in production. Mock provider lives in `tests/Fakes/` and is registered directly in test DI.
+- **Provider selection (music)**: Always Spotify in production. Mock provider lives in `tests/Fakes/` and is registered directly in test DI.
+- **Provider selection (database)**: `Database:Provider` config (`"Sqlite"` or `"Postgres"`). Default: SQLite. Docker overrides to PostgreSQL via environment variable.
 - **Auth**: PKCE OAuth with browser-based flow on first run; refresh token persisted to `AppSettings` table via `ISpotifyAuthenticator` / `SpotifyTokenHandler` (a `DelegatingHandler`)
 - **Token management**: `SpotifyTokenHandler` is a `DelegatingHandler` — NOT mixed into `SpotifyMusicProvider`. Token refresh serialised with `SemaphoreSlim(1,1)`. New refresh tokens written immediately to DB in a dedicated `DbContext` transaction.
 - **Pagination**: `IAsyncEnumerable<T>` on all paginated Spotify endpoints (lazy streaming, not full buffering)
@@ -52,7 +53,7 @@ dotnet add src/Musync package System.CommandLine
 - **Resilience**: Polly via `AddStandardResilienceHandler()` with custom `Retry-After` header support
 - **Logging**: `[LoggerMessage]` source generators (no string interpolation). `JobRunId` pushed as a structured scope property.
 - **Options**: `services.Configure<T>().BindConfiguration("Section").ValidateDataAnnotations().ValidateOnStart()`. No `IConfiguration` injection below `Program.cs`.
-- **EF Core**: SQLite + WAL mode. Migrations applied on startup via `dbContext.Database.MigrateAsync()`. In tests, use real SQLite in-memory (not `UseInMemoryDatabase`).
+- **EF Core**: SQLite + WAL mode (default) or PostgreSQL. Provider selected via `Database:Provider` config. SQLite uses `EnsureCreated()`; PostgreSQL uses `MigrateAsync()`. In tests, use real SQLite in-memory (not `UseInMemoryDatabase`).
 - **Cancellation**: Every `async` method accepts `CancellationToken`. `System.CommandLine` wires `Ctrl+C`/`SIGTERM` to the root token.
 
 ## Testing
