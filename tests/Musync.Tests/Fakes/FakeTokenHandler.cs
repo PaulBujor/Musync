@@ -1,14 +1,14 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Musync.Domain.Interfaces;
 using Musync.Infrastructure.Auth;
-using Musync.Infrastructure.Persistence;
 
 namespace Musync.Tests.Fakes;
 
 public sealed class FakeTokenHandler(
-    AppDbContext db,
+    IServiceScopeFactory scopeFactory,
     ILogger logger,
-    IAuthenticator authenticator) : TokenHandlerBase(db, logger, authenticator)
+    IAuthenticator authenticator) : TokenHandlerBase(scopeFactory, logger, authenticator)
 {
     protected override string TokenUrl => "https://example.com/token";
     protected override string ProviderName => "test";

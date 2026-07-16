@@ -1,38 +1,32 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using Musync.Domain.Interfaces;
+using Musync.Domain;
 using Musync.Infrastructure.Persistence;
-using Musync.Options;
 
 namespace Musync.Jobs;
 
 public sealed class SyncStep1_SnapshotAndDiff(
-    IMusicProvider music,
     AppDbContext db,
     HybridCache cache,
-    IOptions<SpotifyOptions> options,
     ILogger<SyncStep1_SnapshotAndDiff> logger)
 {
-    private readonly SpotifyOptions _options = options.Value;
-
-    public async Task ExecuteAsync(Domain.JobRun jobRun, CancellationToken ct)
+    public async Task ExecuteAsync(JobRun jobRun, SyncRunContext ctx, CancellationToken ct)
     {
         Log.Step1Start(logger);
 
         var likedTrackIdsTask = cache.GetOrCreateAsync(
-            CacheKeys.LikedTracks,
+            CacheKeys.LikedTracks(ctx.ProviderName),
             async ct2 =>
             {
                 var ids = new HashSet<string>();
-                await foreach (var t in music.GetSavedTracksAsync(ct2))
+                await foreach (var t in ctx.Target.GetSavedTracksAsync(ct2))
                     ids.Add(t.Id);
                 return ids;
             },
             cancellationToken: ct).AsTask();
 
-        var currentPlaylistTracks = await FetchPlaylistAsync(ct);
+        var currentPlaylistTracks = await FetchPlaylistAsync(ctx, ct);
         var likedTrackIds = await likedTrackIdsTask;
 
         var currentTrackIds = currentPlaylistTracks.Select(t => t.Id).ToHashSet();
@@ -40,56 +34,77 @@ public sealed class SyncStep1_SnapshotAndDiff(
         var likedInPlaylist = currentTrackIds.Where(likedTrackIds.Contains).ToList();
         if (likedInPlaylist.Count > 0)
         {
-            Log.RemovingLikedTracks(logger, likedInPlaylist.Count);
-            await music.RemoveTracksFromPlaylistAsync(_options.QueuePlaylistId, likedInPlaylist, ct);
+            if (ctx.DryRun)
+            {
+                Log.DryRunWouldRemoveLiked(logger, likedInPlaylist.Count);
+            }
+            else
+            {
+                Log.RemovingLikedTracks(logger, likedInPlaylist.Count);
+                await ctx.Target.RemoveTracksFromPlaylistAsync(ctx.PlaylistId, likedInPlaylist, ct);
 
-            var now = DateTime.UtcNow;
-            const int batchSize = 500;
-            var entries = new List<Domain.TrackHistory>();
-            foreach (var batch in likedInPlaylist.Chunk(batchSize))
-            {
-                var batchEntries = await db.TrackHistories
-                    .Where(x => batch.Contains(x.SpotifyTrackId) && x.RemovedAt == null)
-                    .ToListAsync(ct);
-                entries.AddRange(batchEntries);
+                var now = DateTime.UtcNow;
+                const int batchSize = 500;
+                var entries = new List<TrackHistory>();
+                foreach (var batch in likedInPlaylist.Chunk(batchSize))
+                {
+                    var batchEntries = await db.TrackHistories
+                        .Where(x => x.Provider == ctx.ProviderName
+                            && batch.Contains(x.TrackId) && x.RemovedAt == null)
+                        .ToListAsync(ct);
+                    entries.AddRange(batchEntries);
+                }
+                foreach (var entry in entries)
+                {
+                    entry.RemovedAt = now;
+                    entry.RemovalReason = "liked";
+                }
             }
-            foreach (var entry in entries)
-            {
-                entry.RemovedAt = now;
-                entry.RemovalReason = "liked";
-            }
-            await db.SaveChangesAsync(ct);
 
             jobRun.TracksRemovedLiked = likedInPlaylist.Count;
         }
 
-        var activeHistory = await db.TrackHistories.Where(x => x.RemovedAt == null).ToListAsync(ct);
+        var activeHistory = await db.TrackHistories
+            .Where(x => x.Provider == ctx.ProviderName && x.RemovedAt == null)
+            .ToListAsync(ct);
         var manualRemovals = activeHistory
-            .Where(h => !currentTrackIds.Contains(h.SpotifyTrackId) && !likedInPlaylist.Contains(h.SpotifyTrackId))
+            .Where(h => !currentTrackIds.Contains(h.TrackId) && !likedInPlaylist.Contains(h.TrackId))
             .ToList();
 
         if (manualRemovals.Count > 0)
         {
-            Log.MarkingManualRemovals(logger, manualRemovals.Count);
-            var now = DateTime.UtcNow;
-            foreach (var entry in manualRemovals)
+            if (ctx.DryRun)
             {
-                entry.RemovedAt = now;
-                entry.RemovalReason = "manual";
+                Log.DryRunWouldMarkManualRemovals(logger, manualRemovals.Count);
             }
-            await db.SaveChangesAsync(ct);
+            else
+            {
+                Log.MarkingManualRemovals(logger, manualRemovals.Count);
+                var now = DateTime.UtcNow;
+                foreach (var entry in manualRemovals)
+                {
+                    entry.RemovedAt = now;
+                    entry.RemovalReason = "manual";
+                }
+            }
+
             jobRun.TracksRemovedManual = manualRemovals.Count;
         }
 
-        jobRun.QueueSizeAfter = currentTrackIds.Count - likedInPlaylist.Count;
-        db.JobRuns.Update(jobRun);
-        await db.SaveChangesAsync(ct);
+        ctx.QueueSizeAfterStep1 = currentTrackIds.Count - likedInPlaylist.Count;
+
+        if (!ctx.DryRun && (likedInPlaylist.Count > 0 || manualRemovals.Count > 0))
+        {
+            using var transaction = await db.Database.BeginTransactionAsync(ct);
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
     }
 
-    private async Task<List<Domain.Track>> FetchPlaylistAsync(CancellationToken ct)
+    private async Task<List<Track>> FetchPlaylistAsync(SyncRunContext ctx, CancellationToken ct)
     {
-        var tracks = new List<Domain.Track>();
-        await foreach (var track in music.GetPlaylistTracksAsync(_options.QueuePlaylistId, ct))
+        var tracks = new List<Track>();
+        await foreach (var track in ctx.Target.GetPlaylistTracksAsync(ctx.PlaylistId, ct))
             tracks.Add(track);
         return tracks;
     }

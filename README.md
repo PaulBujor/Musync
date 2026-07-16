@@ -122,6 +122,18 @@ Queue size:        104
 
 Settings come from `appsettings.json` (checked in, safe defaults) overridden by environment variables (secrets at runtime via `.env` or `docker compose`).
 
+### Database (`Database__*`)
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Provider` | `Sqlite` | Database provider: `Sqlite` or `Postgres` |
+
+Connection strings are provider-specific:
+- `ConnectionStrings__Sqlite` — SQLite file path (e.g. `Data Source=/path/to/musync.db`)
+- `ConnectionStrings__Postgres` — PostgreSQL connection string
+
+For portable use, set `ConnectionStrings__Sqlite` to a path inside your Google Drive folder.
+
 ### Spotify (`Spotify__*`)
 
 | Key | Default | Description |
@@ -177,13 +189,13 @@ Musync.slnx
 dotnet test
 ```
 
-Tests use a real SQLite in-memory database (separate from the production PostgreSQL setup) and `LocalMockMusicProvider` — no HTTP calls, no credentials required.
+Tests use a real SQLite in-memory database and `LocalMockMusicProvider` — no HTTP calls, no credentials required.
 
 ## Tech Stack
 
 - .NET 10 / C#
 - System.CommandLine (v2)
-- Entity Framework Core + PostgreSQL
+- Entity Framework Core + SQLite / PostgreSQL
 - Npgsql.EntityFrameworkCore.PostgreSQL
 - Microsoft.Extensions.Http.Resilience (Polly)
 - IHybridCache (in-process)

@@ -11,8 +11,11 @@ public sealed class LocalMockTrackMapper(Dictionary<string, string>? mapping = n
         { "tidal-2", "spotify-track-2" },
     };
 
+    public int CallCount { get; private set; }
+
     public Task<string?> FindTargetTrackIdAsync(Track track, CancellationToken ct)
     {
+        CallCount++;
         var found = _mapping.TryGetValue(track.Id, out var spotifyId);
         return Task.FromResult(found ? spotifyId : null);
     }

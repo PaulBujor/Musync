@@ -2,5 +2,5 @@ namespace Musync.Jobs;
 
 public static class CacheKeys
 {
-    public const string LikedTracks = "liked-tracks";
+    public static string LikedTracks(string provider) => $"{provider}:liked-tracks";
 }

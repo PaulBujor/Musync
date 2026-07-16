@@ -4,14 +4,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Musync.Domain;
 
-[Index(nameof(SpotifyAlbumId))]
+[Index(nameof(Provider), nameof(AlbumId), IsUnique = true)]
 public sealed class ProcessedAlbum
 {
     [Key, DatabaseGenerated(DatabaseGeneratedOption.None)]
     public Guid Id { get; set; }
 
+    [Required, MaxLength(50)]
+    public string Provider { get; set; } = "";
+
     [Required, MaxLength(256)]
-    public string SpotifyAlbumId { get; set; } = "";
+    public string AlbumId { get; set; } = "";
 
     [MaxLength(500)]
     public string AlbumName { get; set; } = "";

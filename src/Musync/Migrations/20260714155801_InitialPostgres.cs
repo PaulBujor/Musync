@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -19,6 +19,10 @@ namespace Musync.Migrations
                     StartedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     FinishedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     Status = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    ProviderName = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Command = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    DryRun = table.Column<bool>(type: "boolean", nullable: false),
+                    Limit = table.Column<int>(type: "integer", nullable: true),
                     TracksAdded = table.Column<int>(type: "integer", nullable: false),
                     TracksRemovedLiked = table.Column<int>(type: "integer", nullable: false),
                     TracksRemovedManual = table.Column<int>(type: "integer", nullable: false),
@@ -38,7 +42,8 @@ namespace Musync.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    SpotifyAlbumId = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
+                    Provider = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    AlbumId = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
                     AlbumName = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
                     ArtistName = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
                     FirstProcessedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
@@ -64,27 +69,13 @@ namespace Musync.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "TidalTrackMappings",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    TidalTrackId = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
-                    SpotifyTrackId = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
-                    Isrc = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
-                    FirstMappedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_TidalTrackMappings", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "TrackHistories",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     JobRunId = table.Column<Guid>(type: "uuid", nullable: false),
-                    SpotifyTrackId = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
+                    Provider = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    TrackId = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
                     TrackName = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
                     ArtistName = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
                     AlbumName = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
@@ -97,10 +88,28 @@ namespace Musync.Migrations
                     table.PrimaryKey("PK_TrackHistories", x => x.Id);
                 });
 
+            migrationBuilder.CreateTable(
+                name: "TrackMappings",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    SourceProvider = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    SourceTrackId = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
+                    TargetProvider = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    TargetTrackId = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
+                    Isrc = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    FirstMappedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_TrackMappings", x => x.Id);
+                });
+
             migrationBuilder.CreateIndex(
-                name: "IX_ProcessedAlbums_SpotifyAlbumId",
+                name: "IX_ProcessedAlbums_Provider_AlbumId",
                 table: "ProcessedAlbums",
-                column: "SpotifyAlbumId");
+                columns: new[] { "Provider", "AlbumId" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_RefreshTokens_Provider_UpdatedAt",
@@ -108,10 +117,14 @@ namespace Musync.Migrations
                 columns: new[] { "Provider", "UpdatedAt" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_TidalTrackMappings_TidalTrackId",
-                table: "TidalTrackMappings",
-                column: "TidalTrackId",
-                unique: true);
+                name: "IX_TrackHistories_JobRunId",
+                table: "TrackHistories",
+                column: "JobRunId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TrackHistories_Provider_TrackId",
+                table: "TrackHistories",
+                columns: new[] { "Provider", "TrackId" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_TrackHistories_RemovedAt",
@@ -119,9 +132,10 @@ namespace Musync.Migrations
                 column: "RemovedAt");
 
             migrationBuilder.CreateIndex(
-                name: "IX_TrackHistories_SpotifyTrackId",
-                table: "TrackHistories",
-                column: "SpotifyTrackId");
+                name: "IX_TrackMappings_SourceProvider_SourceTrackId",
+                table: "TrackMappings",
+                columns: new[] { "SourceProvider", "SourceTrackId" },
+                unique: true);
         }
 
         /// <inheritdoc />
@@ -137,10 +151,10 @@ namespace Musync.Migrations
                 name: "RefreshTokens");
 
             migrationBuilder.DropTable(
-                name: "TidalTrackMappings");
+                name: "TrackHistories");
 
             migrationBuilder.DropTable(
-                name: "TrackHistories");
+                name: "TrackMappings");
         }
     }
 }

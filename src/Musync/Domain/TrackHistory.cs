@@ -4,8 +4,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Musync.Domain;
 
-[Index(nameof(SpotifyTrackId))]
+[Index(nameof(Provider), nameof(TrackId))]
 [Index(nameof(RemovedAt))]
+[Index(nameof(JobRunId))]
 public sealed class TrackHistory
 {
     [Key, DatabaseGenerated(DatabaseGeneratedOption.None)]
@@ -13,8 +14,11 @@ public sealed class TrackHistory
 
     public Guid JobRunId { get; set; }
 
+    [Required, MaxLength(50)]
+    public string Provider { get; set; } = "";
+
     [Required, MaxLength(256)]
-    public string SpotifyTrackId { get; set; } = "";
+    public string TrackId { get; set; } = "";
 
     [MaxLength(500)]
     public string TrackName { get; set; } = "";
