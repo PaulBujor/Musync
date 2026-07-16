@@ -156,8 +156,8 @@ For portable use, set `ConnectionStrings__Sqlite` to a path inside your Google D
 | `ClientSecret` | — | Tidal app client secret |
 | `AuthUrl` | `https://login.tidal.com/authorize` | OAuth authorisation endpoint |
 | `TokenUrl` | `https://auth.tidal.com/v1/oauth2/token` | OAuth token endpoint |
-| `Scopes` | `user.read user_collection.read` | OAuth scopes |
-| `MaxRetries` | `3` | HTTP retry count |
+| `Scopes` | `collection.read` | OAuth scopes |
+| `ApiBaseUrl` | `https://openapi.tidal.com/v2` | Tidal v2 API base URL |
 
 ## Project Structure
 

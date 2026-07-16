@@ -20,43 +20,60 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
 
     public async IAsyncEnumerable<Track> GetSavedTracksAsync([EnumeratorCancellation] CancellationToken ct)
     {
-        var userId = await GetUserIdAsync(ct);
-        var offset = 0;
+        var url = "/userCollectionTracks/me/relationships/items?include=items";
 
-        while (true)
+        while (url is not null)
         {
-            var url = $"https://api.tidal.com/v1/users/{userId}/favorites/tracks" +
-                       $"?limit=100&offset={offset}&countryCode=US";
-
             var response = await http.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
 
             var page = await response.Content
-                .ReadFromJsonAsync(TidalApiJsonContext.Default.TidalFavoritesPage, ct);
+                .ReadFromJsonAsync(TidalApiJsonContext.Default.TidalCollectionPage, ct);
 
-            if (page?.Items is null || page.Items.Count == 0)
+            if (page?.Included is null || page.Included.Count == 0)
                 yield break;
 
-            foreach (var item in page.Items)
+            var artistIds = new HashSet<string>();
+            var albumIds = new HashSet<string>();
+
+            foreach (var track in page.Included)
             {
-                var track = item.Item;
-                if (track is null) continue;
+                if (track.Relationships?.Artists?.Data is { } artistRefs)
+                    foreach (var r in artistRefs)
+                        if (r.Id is not null) artistIds.Add(r.Id);
 
-                var artistName = track.Artists?.FirstOrDefault()?.Name ?? track.Artist?.Name ?? "";
-                var albumName = track.Album?.Title ?? "";
-
-                yield return new Track(
-                    track.Id.ToString(),
-                    track.Title ?? "",
-                    artistName,
-                    albumName,
-                    track.Isrc);
+                if (track.Relationships?.Albums?.Data is { } albumRefs)
+                    foreach (var r in albumRefs)
+                        if (r.Id is not null) albumIds.Add(r.Id);
             }
 
-            if (offset + page.Limit >= page.TotalNumberOfItems)
-                yield break;
+            var artistNames = await BatchResolveArtistsAsync(artistIds, ct);
+            var albumTitles = await BatchResolveAlbumsAsync(albumIds, ct);
 
-            offset += page.Limit;
+            foreach (var track in page.Included)
+            {
+                var attrs = track.Attributes;
+                if (attrs is null) continue;
+
+                var artistName = track.Relationships?.Artists?.Data is { Count: > 0 }
+                    && artistNames.TryGetValue(track.Relationships.Artists.Data[0].Id!, out var name)
+                    ? name
+                    : "";
+
+                var albumTitle = track.Relationships?.Albums?.Data is { Count: > 0 }
+                    && albumTitles.TryGetValue(track.Relationships.Albums.Data[0].Id!, out var title)
+                    ? title
+                    : "";
+
+                yield return new Track(
+                    track.Id ?? "",
+                    attrs.Title ?? "",
+                    artistName,
+                    albumTitle,
+                    attrs.Isrc);
+            }
+
+            url = page.Links?.Next;
         }
     }
 
@@ -68,11 +85,72 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
 
     private async Task<string> GetUserIdAsync(CancellationToken ct)
     {
-        var response = await http.GetAsync("https://openapi.tidal.com/v2/users/me", ct);
+        var response = await http.GetAsync("/users/me", ct);
         response.EnsureSuccessStatusCode();
 
-        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-        var userId = doc.RootElement.GetProperty("data").GetProperty("id").GetString();
-        return userId ?? throw new InvalidOperationException("Could not determine Tidal user ID.");
+        var body = await response.Content
+            .ReadFromJsonAsync(TidalApiJsonContext.Default.TidalUserMeResponse, ct);
+
+        return body?.Data?.Id ?? throw new InvalidOperationException("Could not determine Tidal user ID.");
+    }
+
+    private async Task<Dictionary<string, string>> BatchResolveArtistsAsync(
+        HashSet<string> ids, CancellationToken ct)
+    {
+        var result = new Dictionary<string, string>();
+        var idList = ids.ToList();
+
+        for (var i = 0; i < idList.Count; i += 20)
+        {
+            var batch = idList.Skip(i).Take(20);
+            var filter = string.Join(",", batch);
+            var url = $"/artists?filter[id]={filter}";
+
+            var response = await http.GetAsync(url, ct);
+            if (!response.IsSuccessStatusCode) continue;
+
+            var page = await response.Content
+                .ReadFromJsonAsync(TidalApiJsonContext.Default.TidalArtistsPage, ct);
+
+            if (page?.Included is null) continue;
+
+            foreach (var artist in page.Included)
+            {
+                if (artist.Id is not null && artist.Attributes?.Name is not null)
+                    result[artist.Id] = artist.Attributes.Name;
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<Dictionary<string, string>> BatchResolveAlbumsAsync(
+        HashSet<string> ids, CancellationToken ct)
+    {
+        var result = new Dictionary<string, string>();
+        var idList = ids.ToList();
+
+        for (var i = 0; i < idList.Count; i += 20)
+        {
+            var batch = idList.Skip(i).Take(20);
+            var filter = string.Join(",", batch);
+            var url = $"/albums?filter[id]={filter}";
+
+            var response = await http.GetAsync(url, ct);
+            if (!response.IsSuccessStatusCode) continue;
+
+            var page = await response.Content
+                .ReadFromJsonAsync(TidalApiJsonContext.Default.TidalAlbumsPage, ct);
+
+            if (page?.Included is null) continue;
+
+            foreach (var album in page.Included)
+            {
+                if (album.Id is not null && album.Attributes?.Title is not null)
+                    result[album.Id] = album.Attributes.Title;
+            }
+        }
+
+        return result;
     }
 }

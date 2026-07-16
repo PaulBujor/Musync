@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.CommandLine.Parsing;
+using System.Net.Http.Headers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -74,6 +75,8 @@ builder.Services
     .AddHttpMessageHandler<SpotifyTokenHandler>()
     .AddStandardResilienceHandler(options =>
     {
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
+        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
         options.Retry.DelayGenerator = args =>
         {
             if (args.Outcome.Result?.Headers.RetryAfter?.Delta is { } delta)
@@ -98,9 +101,15 @@ if (!string.IsNullOrEmpty(tidalConfig.ApiBaseUrl))
         {
             var opts = sp.GetRequiredService<IOptions<TidalOptions>>().Value;
             client.BaseAddress = new Uri(opts.ApiBaseUrl);
+            client.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("application/vnd.api+json"));
         })
         .AddHttpMessageHandler<TidalTokenHandler>()
-        .AddStandardResilienceHandler();
+        .AddStandardResilienceHandler(options =>
+        {
+            options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
+            options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
+        });
     builder.Services.AddKeyedSingleton<IMusicProvider>("tidal", (sp, _) =>
         new TidalMusicProvider(
             sp.GetRequiredService<IHttpClientFactory>().CreateClient("tidal-music")));
@@ -116,6 +125,8 @@ builder.Services
     .AddHttpMessageHandler<SpotifyTokenHandler>()
     .AddStandardResilienceHandler(options =>
     {
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
+        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
         options.Retry.MaxRetryAttempts = 3;
     });
 builder.Services.AddKeyedSingleton<ITrackMapper>("spotify", (sp, _) =>

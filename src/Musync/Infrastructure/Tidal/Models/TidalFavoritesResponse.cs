@@ -2,74 +2,149 @@ using System.Text.Json.Serialization;
 
 namespace Musync.Infrastructure.Tidal.Models;
 
-public class TidalFavoritesPage
+// ── Top-level JSON:API response ────────────────────────────────
+
+public class TidalCollectionPage
 {
-    [JsonPropertyName("limit")]
-    public int Limit { get; set; }
+    [JsonPropertyName("data")]
+    public List<TidalResourceIdentifier>? Data { get; set; }
 
-    [JsonPropertyName("offset")]
-    public int Offset { get; set; }
+    [JsonPropertyName("included")]
+    public List<TidalTrackResource>? Included { get; set; }
 
-    [JsonPropertyName("totalNumberOfItems")]
-    public int TotalNumberOfItems { get; set; }
-
-    [JsonPropertyName("items")]
-    public List<TidalFavoriteItem>? Items { get; set; }
+    [JsonPropertyName("links")]
+    public TidalLinks? Links { get; set; }
 }
 
-public class TidalFavoriteItem
-{
-    [JsonPropertyName("item")]
-    public TidalTrackDto? Item { get; set; }
-}
+// ── Resource identifiers (data[] entries) ─────────────────────
 
-public class TidalTrackDto
+public class TidalResourceIdentifier
 {
     [JsonPropertyName("id")]
-    public long Id { get; set; }
+    public string? Id { get; set; }
 
+    [JsonPropertyName("type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("meta")]
+    public TidalResourceMeta? Meta { get; set; }
+}
+
+public class TidalResourceMeta
+{
+    [JsonPropertyName("addedAt")]
+    public string? AddedAt { get; set; }
+}
+
+// ── Track resource (included[] entries) ────────────────────────
+
+public class TidalTrackResource
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("attributes")]
+    public TidalTrackAttributes? Attributes { get; set; }
+
+    [JsonPropertyName("relationships")]
+    public TidalTrackRelationships? Relationships { get; set; }
+}
+
+public class TidalTrackAttributes
+{
     [JsonPropertyName("title")]
     public string? Title { get; set; }
 
     [JsonPropertyName("isrc")]
     public string? Isrc { get; set; }
+}
 
-    [JsonPropertyName("artist")]
-    public TidalArtistRef? Artist { get; set; }
-
+public class TidalTrackRelationships
+{
     [JsonPropertyName("artists")]
-    public List<TidalArtistDto>? Artists { get; set; }
+    public TidalRelationshipData? Artists { get; set; }
 
-    [JsonPropertyName("album")]
-    public TidalAlbumRef? Album { get; set; }
+    [JsonPropertyName("albums")]
+    public TidalRelationshipData? Albums { get; set; }
 }
 
-public class TidalArtistRef
+public class TidalRelationshipData
+{
+    [JsonPropertyName("data")]
+    public List<TidalResourceIdentifier>? Data { get; set; }
+}
+
+// ── Pagination links ──────────────────────────────────────────
+
+public class TidalLinks
+{
+    [JsonPropertyName("self")]
+    public string? Self { get; set; }
+
+    [JsonPropertyName("next")]
+    public string? Next { get; set; }
+
+    [JsonPropertyName("meta")]
+    public TidalLinksMeta? Meta { get; set; }
+}
+
+public class TidalLinksMeta
+{
+    [JsonPropertyName("nextCursor")]
+    public string? NextCursor { get; set; }
+}
+
+// ── Artist/album resolution responses ──────────────────────────
+
+public class TidalArtistsPage
+{
+    [JsonPropertyName("included")]
+    public List<TidalArtistResource>? Included { get; set; }
+}
+
+public class TidalArtistResource
 {
     [JsonPropertyName("id")]
-    public long Id { get; set; }
+    public string? Id { get; set; }
 
+    [JsonPropertyName("attributes")]
+    public TidalArtistAttributes? Attributes { get; set; }
+}
+
+public class TidalArtistAttributes
+{
     [JsonPropertyName("name")]
     public string? Name { get; set; }
 }
 
-public class TidalArtistDto
+public class TidalAlbumsPage
 {
-    [JsonPropertyName("id")]
-    public long Id { get; set; }
-
-    [JsonPropertyName("name")]
-    public string? Name { get; set; }
-
-    [JsonPropertyName("type")]
-    public string? Type { get; set; }
+    [JsonPropertyName("included")]
+    public List<TidalAlbumResource>? Included { get; set; }
 }
 
-public class TidalAlbumRef
+public class TidalAlbumResource
 {
     [JsonPropertyName("id")]
-    public long Id { get; set; }
+    public string? Id { get; set; }
 
+    [JsonPropertyName("attributes")]
+    public TidalAlbumAttributes? Attributes { get; set; }
+}
+
+public class TidalAlbumAttributes
+{
     [JsonPropertyName("title")]
     public string? Title { get; set; }
+}
+
+// ── User me response ──────────────────────────────────────────
+
+public class TidalUserMeResponse
+{
+    [JsonPropertyName("data")]
+    public TidalResourceIdentifier? Data { get; set; }
 }
