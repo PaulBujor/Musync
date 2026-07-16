@@ -15,7 +15,7 @@ public sealed class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<App
             .AddEnvironmentVariables()
             .Build();
 
-        var provider = configuration.GetValue<string>("Database:Provider") ?? "Postgres";
+        var provider = configuration.GetValue<string>("Database:Provider") ?? "Sqlite";
         var builder = new DbContextOptionsBuilder<AppDbContext>();
 
         switch (provider)
