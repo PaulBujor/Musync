@@ -4,17 +4,23 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Musync.Domain;
 
-[Index(nameof(TidalTrackId), IsUnique = true)]
-public sealed class TidalTrackMapping
+[Index(nameof(SourceProvider), nameof(SourceTrackId), IsUnique = true)]
+public sealed class TrackMapping
 {
     [Key, DatabaseGenerated(DatabaseGeneratedOption.None)]
     public Guid Id { get; set; }
 
-    [Required, MaxLength(256)]
-    public string TidalTrackId { get; set; } = "";
+    [Required, MaxLength(50)]
+    public string SourceProvider { get; set; } = "";
 
     [Required, MaxLength(256)]
-    public string SpotifyTrackId { get; set; } = "";
+    public string SourceTrackId { get; set; } = "";
+
+    [Required, MaxLength(50)]
+    public string TargetProvider { get; set; } = "";
+
+    [Required, MaxLength(256)]
+    public string TargetTrackId { get; set; } = "";
 
     [MaxLength(50)]
     public string Isrc { get; set; } = "";

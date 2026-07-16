@@ -9,5 +9,5 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<TrackHistory> TrackHistories => Set<TrackHistory>();
     public DbSet<ProcessedAlbum> ProcessedAlbums => Set<ProcessedAlbum>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
-    public DbSet<TidalTrackMapping> TidalTrackMappings => Set<TidalTrackMapping>();
+    public DbSet<TrackMapping> TrackMappings => Set<TrackMapping>();
 }

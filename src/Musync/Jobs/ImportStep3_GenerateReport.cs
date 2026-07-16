@@ -3,21 +3,28 @@ using Musync.Domain;
 
 namespace Musync.Jobs;
 
-public sealed class ImportTidalStep3_GenerateReport(ILogger<ImportTidalStep3_GenerateReport> logger)
+public sealed class ImportStep3_GenerateReport(ILogger<ImportStep3_GenerateReport> logger)
 {
-    public Task ExecuteAsync(JobRun jobRun)
+    public Task ExecuteAsync(JobRun jobRun, ImportRunContext ctx, CancellationToken ct)
     {
         var duration = jobRun.FinishedAt.HasValue
             ? jobRun.FinishedAt.Value - jobRun.StartedAt
             : TimeSpan.Zero;
 
-        Log.TidalCompleteHeader(logger);
+        if (ctx.DryRun)
+            Log.DryRunActive(logger);
+
+        Log.ImportCompleteHeader(logger);
         Log.SyncDuration(logger, duration.ToString(@"hh\:mm\:ss"));
         Log.SyncStatus(logger, jobRun.Status);
         Log.TracksAdded(logger, jobRun.TracksAdded);
         Log.TracksSkipped(logger, jobRun.TracksSkipped);
-        Log.TidalTracksMapped(logger, jobRun.NewAlbumsEncountered);
+        Log.TracksMapped(logger, jobRun.NewAlbumsEncountered);
         Log.QueueSize(logger, jobRun.QueueSizeAfter);
+
+        if (ctx.Limit.HasValue)
+            Log.LimitApplied(logger, ctx.Limit.Value);
+
         Log.SyncCompleteFooter(logger);
 
         return Task.CompletedTask;

@@ -1,8 +1,8 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Musync.Domain.Interfaces;
 using Musync.Infrastructure.Auth;
-using Musync.Infrastructure.Persistence;
 using Musync.Options;
 
 namespace Musync.Infrastructure.Tidal;
@@ -10,9 +10,9 @@ namespace Musync.Infrastructure.Tidal;
 public sealed class TidalTokenHandler(
     IOptions<TidalOptions> options,
     ITidalAuthenticator authenticator,
-    AppDbContext db,
+    IServiceScopeFactory scopeFactory,
     ILogger<TidalTokenHandler> logger)
-    : TokenHandlerBase(db, logger, authenticator)
+    : TokenHandlerBase(scopeFactory, logger, authenticator)
 {
     private const string TokenUrlConst = "https://auth.tidal.com/v1/oauth2/token";
     private readonly TidalOptions _options = options.Value;

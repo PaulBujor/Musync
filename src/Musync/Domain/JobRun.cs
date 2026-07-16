@@ -12,7 +12,17 @@ public sealed class JobRun
     public DateTime? FinishedAt { get; set; }
 
     [MaxLength(50)]
-    public string Status { get; set; } = "succeeded";
+    public string Status { get; set; } = "running";
+
+    [MaxLength(50)]
+    public string? ProviderName { get; set; }
+
+    [MaxLength(50)]
+    public string? Command { get; set; }
+
+    public bool DryRun { get; set; }
+
+    public int? Limit { get; set; }
 
     public int TracksAdded { get; set; }
     public int TracksRemovedLiked { get; set; }

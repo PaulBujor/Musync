@@ -5,11 +5,14 @@ namespace Musync.Jobs;
 
 public sealed class SyncStep3_GenerateReport(ILogger<SyncStep3_GenerateReport> logger)
 {
-    public Task ExecuteAsync(JobRun jobRun, CancellationToken ct)
+    public Task ExecuteAsync(JobRun jobRun, SyncRunContext ctx, CancellationToken ct)
     {
         var duration = jobRun.FinishedAt.HasValue
             ? jobRun.FinishedAt.Value - jobRun.StartedAt
             : TimeSpan.Zero;
+
+        if (ctx.DryRun)
+            Log.DryRunActive(logger);
 
         Log.SyncCompleteHeader(logger);
         Log.SyncDuration(logger, duration.ToString(@"hh\:mm\:ss"));
@@ -22,6 +25,10 @@ public sealed class SyncStep3_GenerateReport(ILogger<SyncStep3_GenerateReport> l
         Log.TracksSkipped(logger, jobRun.TracksSkipped);
         Log.NewAlbumsSeen(logger, jobRun.NewAlbumsEncountered);
         Log.QueueSize(logger, jobRun.QueueSizeAfter);
+
+        if (ctx.Limit.HasValue)
+            Log.LimitApplied(logger, ctx.Limit.Value);
+
         Log.SyncCompleteFooter(logger);
 
         return Task.CompletedTask;

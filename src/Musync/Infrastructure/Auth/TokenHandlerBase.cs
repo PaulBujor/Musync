@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Musync.Domain;
 using Musync.Domain.Interfaces;
@@ -10,7 +11,7 @@ using Musync.Infrastructure.Persistence;
 namespace Musync.Infrastructure.Auth;
 
 public abstract class TokenHandlerBase(
-    AppDbContext db,
+    IServiceScopeFactory scopeFactory,
     ILogger logger,
     IAuthenticator authenticator) : DelegatingHandler
 {
@@ -54,6 +55,9 @@ public abstract class TokenHandlerBase(
             if (_accessToken != null && DateTime.UtcNow < _tokenExpiry)
                 return;
 
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
             var existingToken = await db.RefreshTokens
                 .Where(x => x.Provider == ProviderName)
                 .OrderByDescending(x => x.UpdatedAt)
@@ -68,7 +72,7 @@ public abstract class TokenHandlerBase(
                     .FirstOrDefaultAsync(ct);
             }
 
-            var refreshed = await TryRefreshAccessTokenAsync(existingToken!.Token, ct);
+            var refreshed = await TryRefreshAccessTokenAsync(db, existingToken!.Token, ct);
             if (!refreshed)
             {
                 logger.LogWarning("{Provider} refresh token expired. Re-authenticating...", ProviderName);
@@ -84,7 +88,7 @@ public abstract class TokenHandlerBase(
                     throw new InvalidOperationException(
                         $"Failed to obtain a new {ProviderName} refresh token after expiry.");
 
-                await TryRefreshAccessTokenAsync(newToken.Token, ct);
+                await TryRefreshAccessTokenAsync(db, newToken.Token, ct);
             }
         }
         finally
@@ -93,7 +97,7 @@ public abstract class TokenHandlerBase(
         }
     }
 
-    private async Task<bool> TryRefreshAccessTokenAsync(string refreshToken, CancellationToken ct)
+    private async Task<bool> TryRefreshAccessTokenAsync(AppDbContext db, string refreshToken, CancellationToken ct)
     {
         var request = CreateRefreshRequest(refreshToken);
 

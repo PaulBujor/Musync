@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Musync.Domain;
 using Musync.Infrastructure.Persistence;
@@ -11,6 +12,7 @@ namespace Musync.Tests.Jobs;
 public sealed class TokenHandlerTests : IDisposable
 {
     private readonly AppDbContext _db;
+    private readonly TestScopeFactory _scopeFactory;
 
     public TokenHandlerTests()
     {
@@ -21,12 +23,35 @@ public sealed class TokenHandlerTests : IDisposable
         _db = new AppDbContext(options);
         _db.Database.OpenConnection();
         _db.Database.EnsureCreated();
+
+        _scopeFactory = new TestScopeFactory(_db);
     }
 
     public void Dispose()
     {
         _db.Database.CloseConnection();
         _db.Dispose();
+    }
+
+    private sealed class TestScopeFactory(AppDbContext db) : IServiceScopeFactory
+    {
+        public IServiceScope CreateScope() => new TestScope(db);
+
+        private sealed class TestScope(AppDbContext db) : IServiceScope
+        {
+            public IServiceProvider ServiceProvider => new TestServiceProvider(db);
+            public void Dispose() { }
+        }
+
+        private sealed class TestServiceProvider(AppDbContext db) : IServiceProvider
+        {
+            public object? GetService(Type serviceType)
+            {
+                if (serviceType == typeof(AppDbContext))
+                    return db;
+                return null;
+            }
+        }
     }
 
     [Fact]
@@ -44,7 +69,7 @@ public sealed class TokenHandlerTests : IDisposable
         var authenticator = new MockAuthenticator(_db);
         var logger = NullLoggerFactory.Instance.CreateLogger("FakeTokenHandler");
 
-        var tokenHandler = new FakeTokenHandler(_db, logger, authenticator);
+        var tokenHandler = new FakeTokenHandler(_scopeFactory, logger, authenticator);
 
         var refreshAttempts = 0;
         tokenHandler.InnerHandler = new MockHttpMessageHandler(request =>
@@ -102,7 +127,7 @@ public sealed class TokenHandlerTests : IDisposable
         var authenticator = new MockAuthenticator(_db);
         var logger = NullLoggerFactory.Instance.CreateLogger("FakeTokenHandler");
 
-        var tokenHandler = new FakeTokenHandler(_db, logger, authenticator);
+        var tokenHandler = new FakeTokenHandler(_scopeFactory, logger, authenticator);
 
         tokenHandler.InnerHandler = new MockHttpMessageHandler(request =>
         {
@@ -139,7 +164,7 @@ public sealed class TokenHandlerTests : IDisposable
         var authenticator = new MockAuthenticator(_db);
         var logger = NullLoggerFactory.Instance.CreateLogger("FakeTokenHandler");
 
-        var tokenHandler = new FakeTokenHandler(_db, logger, authenticator);
+        var tokenHandler = new FakeTokenHandler(_scopeFactory, logger, authenticator);
 
         var refreshAttempts = 0;
         tokenHandler.InnerHandler = new MockHttpMessageHandler(request =>
