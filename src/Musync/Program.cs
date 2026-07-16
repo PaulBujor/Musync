@@ -158,8 +158,8 @@ Console.CancelKeyPress += (_, e) =>
 // ── Command tree ──────────────────────────────────────────────
 var rootCommand = new RootCommand("Musync — multi-provider music queue manager");
 
-var dryRunOption = new Option<bool>("--dry-run", "Preview changes without mutating providers") { Recursive = true };
-var limitOption = new Option<int?>("--limit", "Maximum number of items to process") { Recursive = true };
+var dryRunOption = new Option<bool>("--dry-run") { Recursive = true, Description = "Preview changes without mutating providers" };
+var limitOption = new Option<int?>("--limit") { Recursive = true, Description = "Maximum number of items to process" };
 rootCommand.Add(dryRunOption);
 rootCommand.Add(limitOption);
 
@@ -174,13 +174,13 @@ spotifyCmd.Add(spotifyQueueAlbums);
 var tidalQueueAlbums = new Command("queue-albums", "Sync saved albums to the queue playlist");
 tidalCmd.Add(tidalQueueAlbums);
 
-var spotifySourceOption = new Option<string>("--source", "Source provider to import from")
+var spotifySourceOption = new Option<string>("--source") { Description = "Source provider to import from" }
     .AcceptOnlyFromAmong("spotify", "tidal");
 var spotifyImport = new Command("import", "Import tracks from another provider");
 spotifyImport.Add(spotifySourceOption);
 spotifyCmd.Add(spotifyImport);
 
-var tidalSourceOption = new Option<string>("--source", "Source provider to import from")
+var tidalSourceOption = new Option<string>("--source") { Description = "Source provider to import from" }
     .AcceptOnlyFromAmong("spotify", "tidal");
 var tidalImport = new Command("import", "Import tracks from another provider");
 tidalImport.Add(tidalSourceOption);
