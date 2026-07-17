@@ -160,7 +160,11 @@ Connection strings are provider-specific:
 - `ConnectionStrings__Sqlite` — SQLite file path (e.g. `Data Source=/path/to/musync.db`)
 - `ConnectionStrings__Postgres` — PostgreSQL connection string
 
-For portable use, set `ConnectionStrings__Sqlite` to a path inside your Google Drive folder.
+The database holds your OAuth refresh tokens, **encrypted at rest** via .NET Data Protection. The
+encryption keys are kept under your local user profile (`%LOCALAPPDATA%\Musync\keys` on Windows,
+`~/.local/share/Musync/keys` on Linux/macOS), separate from the database file. Tokens can only be
+decrypted on the machine that created them, so don't rely on syncing the database to another
+machine (or to cloud storage) to move your setup — re-authenticate on the new machine instead.
 
 ### Spotify (`Spotify__*`)
 

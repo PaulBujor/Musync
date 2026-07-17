@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Net.Http.Headers;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,6 +55,15 @@ builder.Services.AddDbContext<AppDbContext>(options =>
             throw new InvalidOperationException($"Unsupported database provider: {dbProvider}");
     }
 });
+
+// Encrypt refresh tokens at rest (see AppDbContext). Keys live under the local user profile,
+// separate from the database, so copying the DB alone cannot decrypt the tokens.
+var keyRingPath = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Musync", "keys");
+Directory.CreateDirectory(keyRingPath);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keyRingPath))
+    .SetApplicationName("Musync");
 
 // Step classes (providers come via RunContext, not DI)
 builder.Services.AddScoped<SyncStep1_SnapshotAndDiff>();
