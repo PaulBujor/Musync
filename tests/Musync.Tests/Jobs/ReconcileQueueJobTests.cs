@@ -23,15 +23,18 @@ public sealed class ReconcileQueueJobTests
         return sp;
     }
 
-    private static List<Track> DuplicatedPlaylist() =>
-    [
-        new("track-1", "One", "Artist", "Album"),
-        new("track-1", "One", "Artist", "Album"),
-        new("track-2", "Two", "Artist", "Album"),
-        new("track-3", "Three", "Artist", "Album"),
-        new("track-3", "Three", "Artist", "Album"),
-        new("track-3", "Three", "Artist", "Album")
-    ];
+    private static List<Track> DuplicatedPlaylist()
+    {
+        return
+        [
+            new("track-1", "One", "Artist", "Album"),
+            new("track-1", "One", "Artist", "Album"),
+            new("track-2", "Two", "Artist", "Album"),
+            new("track-3", "Three", "Artist", "Album"),
+            new("track-3", "Three", "Artist", "Album"),
+            new("track-3", "Three", "Artist", "Album")
+        ];
+    }
 
     [Fact]
     public async Task RunAsync_RemovesDuplicatesAndBackfillsHistory()
@@ -41,7 +44,7 @@ public sealed class ReconcileQueueJobTests
         var db = sp.GetRequiredService<AppDbContext>();
         var job = new ReconcileQueueJob(db, NullLogger<ReconcileQueueJob>.Instance);
 
-        var ctx = new ReconcileRunContext("spotify", provider, "test-playlist", DryRun: false);
+        var ctx = new ReconcileRunContext("spotify", provider, "test-playlist", false);
         await job.RunAsync(ctx, CancellationToken.None);
 
         Assert.Equal(3, provider.PlaylistTracks.Count);
@@ -70,7 +73,7 @@ public sealed class ReconcileQueueJobTests
         var db = sp.GetRequiredService<AppDbContext>();
         var job = new ReconcileQueueJob(db, NullLogger<ReconcileQueueJob>.Instance);
 
-        var ctx = new ReconcileRunContext("spotify", provider, "test-playlist", DryRun: true);
+        var ctx = new ReconcileRunContext("spotify", provider, "test-playlist", true);
         await job.RunAsync(ctx, CancellationToken.None);
 
         Assert.Equal(6, provider.PlaylistTracks.Count);
@@ -91,7 +94,7 @@ public sealed class ReconcileQueueJobTests
         var db = sp.GetRequiredService<AppDbContext>();
         var job = new ReconcileQueueJob(db, NullLogger<ReconcileQueueJob>.Instance);
 
-        var ctx = new ReconcileRunContext("spotify", provider, "test-playlist", DryRun: false);
+        var ctx = new ReconcileRunContext("spotify", provider, "test-playlist", false);
         await job.RunAsync(ctx, CancellationToken.None);
 
         Assert.Equal(2, provider.PlaylistTracks.Count);

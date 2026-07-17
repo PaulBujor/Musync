@@ -17,7 +17,7 @@ public sealed class SpotifySearchMapper(
         // ISRC is a stable cross-provider identifier, so an isrc: match is authoritative.
         if (!string.IsNullOrEmpty(track.Isrc))
         {
-            var byIsrc = await SearchAsync($"isrc:{track.Isrc}", limit: 1, ct);
+            var byIsrc = await SearchAsync($"isrc:{track.Isrc}", 1, ct);
             if (byIsrc.Count > 0)
                 return byIsrc[0].Id;
         }

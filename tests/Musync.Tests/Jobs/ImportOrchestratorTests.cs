@@ -6,7 +6,6 @@ using Musync.Domain;
 using Musync.Domain.Interfaces;
 using Musync.Infrastructure.Persistence;
 using Musync.Jobs.Import;
-using Musync.Options;
 using Musync.Tests.Fakes;
 
 namespace Musync.Tests.Jobs;
@@ -60,14 +59,14 @@ public sealed class ImportOrchestratorTests
         var logger = NullLogger<ImportOrchestrator>.Instance;
 
         var ctx = new ImportRunContext(
-            SourceProviderName: "tidal",
-            TargetProviderName: "spotify",
-            Source: sourceProvider,
-            Target: targetProvider,
-            Mapper: mapper,
-            PlaylistId: "test-playlist",
-            DryRun: dryRun,
-            Limit: limit);
+            "tidal",
+            "spotify",
+            sourceProvider,
+            targetProvider,
+            mapper,
+            "test-playlist",
+            dryRun,
+            limit);
 
         var orchestrator = new ImportOrchestrator(db, step1, step2, step3, logger);
         await orchestrator.RunAsync(ctx, CancellationToken.None);
@@ -97,7 +96,7 @@ public sealed class ImportOrchestratorTests
         var tidalTracks = new List<Track>
         {
             new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
-            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002"),
+            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002")
         };
 
         var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
@@ -131,7 +130,7 @@ public sealed class ImportOrchestratorTests
         var tidalTracks = new List<Track>
         {
             new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
-            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002"),
+            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002")
         };
 
         var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
@@ -157,14 +156,14 @@ public sealed class ImportOrchestratorTests
         var logger = NullLogger<ImportOrchestrator>.Instance;
 
         var ctx = new ImportRunContext(
-            SourceProviderName: "tidal",
-            TargetProviderName: "spotify",
-            Source: source,
-            Target: target,
-            Mapper: mapper,
-            PlaylistId: "test-playlist",
-            DryRun: false,
-            Limit: null);
+            "tidal",
+            "spotify",
+            source,
+            target,
+            mapper,
+            "test-playlist",
+            false,
+            null);
 
         var orchestrator = new ImportOrchestrator(db, step1, step2, step3, logger);
         await orchestrator.RunAsync(ctx, CancellationToken.None);
@@ -185,7 +184,7 @@ public sealed class ImportOrchestratorTests
         var tidalTracks = new List<Track>
         {
             new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
-            new("tidal-unknown", "Unknown Track", "Unknown Artist", "Album U", "USRC99999999"),
+            new("tidal-unknown", "Unknown Track", "Unknown Artist", "Album U", "USRC99999999")
         };
 
         var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
@@ -215,7 +214,7 @@ public sealed class ImportOrchestratorTests
     {
         var tidalTracks = new List<Track>
         {
-            new("tidal-unknown", "Unknown Track", "Unknown Artist", "Album U", "USRC99999999"),
+            new("tidal-unknown", "Unknown Track", "Unknown Artist", "Album U", "USRC99999999")
         };
 
         var sp = BuildTestServices();
@@ -242,14 +241,14 @@ public sealed class ImportOrchestratorTests
         var logger = NullLogger<ImportOrchestrator>.Instance;
 
         var ctx = new ImportRunContext(
-            SourceProviderName: "tidal",
-            TargetProviderName: "spotify",
-            Source: source,
-            Target: target,
-            Mapper: mapper,
-            PlaylistId: "test-playlist",
-            DryRun: false,
-            Limit: null);
+            "tidal",
+            "spotify",
+            source,
+            target,
+            mapper,
+            "test-playlist",
+            false,
+            null);
 
         var orchestrator = new ImportOrchestrator(db, step1, step2, step3, logger);
         await orchestrator.RunAsync(ctx, CancellationToken.None);
@@ -264,7 +263,7 @@ public sealed class ImportOrchestratorTests
     {
         var tidalTracks = new List<Track>
         {
-            new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
+            new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001")
         };
 
         var sp = BuildTestServices();
@@ -291,14 +290,14 @@ public sealed class ImportOrchestratorTests
         var logger = NullLogger<ImportOrchestrator>.Instance;
 
         var ctx = new ImportRunContext(
-            SourceProviderName: "tidal",
-            TargetProviderName: "spotify",
-            Source: source,
-            Target: target,
-            Mapper: mapper,
-            PlaylistId: "test-playlist",
-            DryRun: false,
-            Limit: null);
+            "tidal",
+            "spotify",
+            source,
+            target,
+            mapper,
+            "test-playlist",
+            false,
+            null);
 
         var orchestrator = new ImportOrchestrator(db, step1, step2, step3, logger);
         await orchestrator.RunAsync(ctx, CancellationToken.None);
@@ -319,12 +318,12 @@ public sealed class ImportOrchestratorTests
         var tidalTracks = new List<Track>
         {
             new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
-            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002"),
+            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002")
         };
 
         var spotifyLiked = new List<Track>
         {
-            new("spotify-track-1", "Track One", "Artist A", "Album A", "USRC10000001"),
+            new("spotify-track-1", "Track One", "Artist A", "Album A", "USRC10000001")
         };
 
         var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
@@ -349,14 +348,14 @@ public sealed class ImportOrchestratorTests
     {
         var tidalTracks = new List<Track>
         {
-            new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
+            new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001")
         };
 
         var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
         var target = new LocalMockMusicProvider();
         var mapper = new LocalMockTrackMapper();
 
-        var sp = await RunAsync(source, target, mapper, dryRun: true);
+        var sp = await RunAsync(source, target, mapper, true);
         var db = sp.GetRequiredService<AppDbContext>();
 
         Assert.Empty(target.PlaylistTracks);
@@ -375,7 +374,7 @@ public sealed class ImportOrchestratorTests
         {
             new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
             new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002"),
-            new("tidal-3", "Track Three", "Artist C", "Album C", "USRC10000003"),
+            new("tidal-3", "Track Three", "Artist C", "Album C", "USRC10000003")
         };
 
         var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
@@ -399,7 +398,7 @@ public sealed class ImportOrchestratorTests
         var tidalTracks = new List<Track>
         {
             new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
-            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002"),
+            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002")
         };
 
         var source = new LocalMockMusicProvider(savedTracks: tidalTracks);

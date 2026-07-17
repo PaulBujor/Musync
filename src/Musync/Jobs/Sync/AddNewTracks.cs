@@ -74,6 +74,7 @@ public sealed class AddNewTracks(
                             updatedProcessedAlbums.Add(existing);
                         }
                     }
+
                     return;
                 }
 
@@ -89,6 +90,7 @@ public sealed class AddNewTracks(
                         Interlocked.Increment(ref tracksSkipped);
                         continue;
                     }
+
                     albumTracks.Add(track);
                 }
 
@@ -118,10 +120,7 @@ public sealed class AddNewTracks(
 
         jobRun.TracksSkipped = tracksSkipped;
 
-        if (ctx.Limit.HasValue && limitHit)
-        {
-            Log.LimitReached(logger, ctx.Limit.Value);
-        }
+        if (ctx.Limit.HasValue && limitHit) Log.LimitReached(logger, ctx.Limit.Value);
 
         // A track can appear on more than one saved album; keep a single copy per id.
         newTracks = newTracks

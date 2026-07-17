@@ -69,7 +69,8 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Information, Message = "Step 2: Add mapped tracks to queue playlist")]
     public static partial void ImportStep2Start(ILogger logger);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not find target match for source track \"{TrackName}\" by {ArtistName}")]
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Could not find target match for source track \"{TrackName}\" by {ArtistName}")]
     public static partial void TrackNotMapped(ILogger logger, string trackName, string artistName);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "No mapped tracks to import")]
@@ -82,7 +83,8 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Information, Message = "[DRY-RUN] Would remove {Count} liked tracks from playlist")]
     public static partial void DryRunWouldRemoveLiked(ILogger logger, int count);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "[DRY-RUN] Would add {Count} tracks to playlist {PlaylistId}")]
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "[DRY-RUN] Would add {Count} tracks to playlist {PlaylistId}")]
     public static partial void DryRunWouldAdd(ILogger logger, int count, string playlistId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "[DRY-RUN] Would mark {Count} manual removals")]

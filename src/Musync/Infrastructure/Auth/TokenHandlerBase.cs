@@ -198,6 +198,7 @@ public abstract class TokenHandlerBase(
                 existing.Token = newToken;
                 existing.UpdatedAt = DateTime.UtcNow;
             }
+
             await db.SaveChangesAsync(ct);
         }
 

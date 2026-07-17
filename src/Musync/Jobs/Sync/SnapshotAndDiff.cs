@@ -51,10 +51,11 @@ public sealed class SnapshotAndDiff(
                 {
                     var batchEntries = await db.TrackHistories
                         .Where(x => x.Provider == ctx.ProviderName
-                            && batch.Contains(x.TrackId) && x.RemovedAt == null)
+                                    && batch.Contains(x.TrackId) && x.RemovedAt == null)
                         .ToListAsync(ct);
                     entries.AddRange(batchEntries);
                 }
+
                 foreach (var entry in entries)
                 {
                     entry.RemovedAt = now;

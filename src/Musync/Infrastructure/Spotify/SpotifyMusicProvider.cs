@@ -31,7 +31,8 @@ public sealed class SpotifyMusicProvider(HttpClient http, HttpClient writeHttp) 
                 yield break;
 
             foreach (var item in page.Items)
-                yield return new Album(item.Album.Id, item.Album.Name, item.Album.Artists.Count > 0 ? item.Album.Artists[0].Name : "Unknown Artist");
+                yield return new Album(item.Album.Id, item.Album.Name,
+                    item.Album.Artists.Count > 0 ? item.Album.Artists[0].Name : "Unknown Artist");
 
             url = page.Next;
         }
@@ -53,7 +54,8 @@ public sealed class SpotifyMusicProvider(HttpClient http, HttpClient writeHttp) 
                 yield break;
 
             foreach (var item in page.Items)
-                yield return new Track(item.Id, item.Name, item.Artists.Count > 0 ? item.Artists[0].Name : "Unknown Artist", albumName);
+                yield return new Track(item.Id, item.Name,
+                    item.Artists.Count > 0 ? item.Artists[0].Name : "Unknown Artist", albumName);
 
             url = page.Next;
         }
@@ -74,7 +76,9 @@ public sealed class SpotifyMusicProvider(HttpClient http, HttpClient writeHttp) 
                 yield break;
 
             foreach (var item in page.Items)
-                yield return new Track(item.Track.Id, item.Track.Name, item.Track.Artists.Count > 0 ? item.Track.Artists[0].Name : "Unknown Artist", item.Track.Album?.Name ?? "", Isrc: item.Track.ExternalIds?.Isrc);
+                yield return new Track(item.Track.Id, item.Track.Name,
+                    item.Track.Artists.Count > 0 ? item.Track.Artists[0].Name : "Unknown Artist",
+                    item.Track.Album?.Name ?? "", item.Track.ExternalIds?.Isrc);
 
             url = page.Next;
         }

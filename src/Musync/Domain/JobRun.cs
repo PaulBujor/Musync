@@ -5,20 +5,18 @@ namespace Musync.Domain;
 
 public sealed class JobRun
 {
-    [Key, DatabaseGenerated(DatabaseGeneratedOption.None)]
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.None)]
     public Guid Id { get; set; }
 
     public DateTime StartedAt { get; set; }
     public DateTime? FinishedAt { get; set; }
 
-    [MaxLength(50)]
-    public string Status { get; set; } = JobStatus.Running;
+    [MaxLength(50)] public string Status { get; set; } = JobStatus.Running;
 
-    [MaxLength(50)]
-    public string? ProviderName { get; set; }
+    [MaxLength(50)] public string? ProviderName { get; set; }
 
-    [MaxLength(50)]
-    public string? Command { get; set; }
+    [MaxLength(50)] public string? Command { get; set; }
 
     public bool DryRun { get; set; }
 
@@ -35,6 +33,5 @@ public sealed class JobRun
 
     public int QueueSizeAfter { get; set; }
 
-    [MaxLength(2000)]
-    public string? ErrorMessage { get; set; }
+    [MaxLength(2000)] public string? ErrorMessage { get; set; }
 }

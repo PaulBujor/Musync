@@ -18,6 +18,7 @@ using Musync.Jobs;
 using Musync.Jobs.Import;
 using Musync.Jobs.Sync;
 using Musync.Options;
+using GenerateReport = Musync.Jobs.Sync.GenerateReport;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -81,7 +82,7 @@ builder.Services.AddDataProtection()
 builder.Services.AddScoped<QueueAlbumsOrchestrator>();
 builder.Services.AddScoped<SnapshotAndDiff>();
 builder.Services.AddScoped<AddNewTracks>();
-builder.Services.AddScoped<Musync.Jobs.Sync.GenerateReport>();
+builder.Services.AddScoped<GenerateReport>();
 builder.Services.AddScoped<ImportOrchestrator>();
 builder.Services.AddScoped<FetchAndMap>();
 builder.Services.AddScoped<AddToQueue>();
@@ -225,7 +226,8 @@ Console.CancelKeyPress += (_, e) =>
 // ── Command tree ──────────────────────────────────────────────
 var rootCommand = new RootCommand("Musync — multi-provider music queue manager");
 
-var dryRunOption = new Option<bool>("--dry-run") { Recursive = true, Description = "Preview changes without mutating providers" };
+var dryRunOption = new Option<bool>("--dry-run")
+    { Recursive = true, Description = "Preview changes without mutating providers" };
 var limitOption = new Option<int?>("--limit") { Recursive = true, Description = "Maximum number of items to process" };
 rootCommand.Add(dryRunOption);
 rootCommand.Add(limitOption);
@@ -330,7 +332,8 @@ if (invokedCommand == importTidalCommand)
 {
     var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Musync");
     Log.DeprecatedCommand(logger, "import-tidal", "spotify import --source tidal");
-    var result = await RunImportAsync(ProviderKeys.Spotify, ProviderKeys.Tidal, dryRun, limit, host.Services, cts.Token);
+    var result =
+        await RunImportAsync(ProviderKeys.Spotify, ProviderKeys.Tidal, dryRun, limit, host.Services, cts.Token);
     return result == 0 ? 3 : result;
 }
 
@@ -361,6 +364,7 @@ static async Task<int> RunQueueAlbumsAsync(
         await Console.Error.WriteLineAsync(optsError);
         return 1;
     }
+
     if (string.IsNullOrEmpty(opts.QueuePlaylistId))
     {
         await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for sync.");
@@ -418,11 +422,13 @@ static async Task<int> RunReconcileAsync(
         await Console.Error.WriteLineAsync(optsError);
         return 1;
     }
+
     if (string.IsNullOrEmpty(opts.QueuePlaylistId))
     {
         await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for reconcile-queue.");
         return 1;
     }
+
     var playlistId = opts.QueuePlaylistId;
 
     var provider = scope.ServiceProvider.GetKeyedService<IMusicProvider>(providerKey);
@@ -466,16 +472,19 @@ static async Task<int> RunImportAsync(
         await Console.Error.WriteLineAsync($"Unknown target provider: {targetProviderKey}");
         return 1;
     }
+
     if (!ProviderKeys.All.Contains(sourceProviderKey))
     {
         await Console.Error.WriteLineAsync($"Unknown source provider: {sourceProviderKey}");
         return 1;
     }
+
     if (targetProviderKey == sourceProviderKey)
     {
         await Console.Error.WriteLineAsync("Source and target providers must be different.");
         return 1;
     }
+
     if (targetProviderKey == ProviderKeys.Tidal)
     {
         await Console.Error.WriteLineAsync(
@@ -492,11 +501,13 @@ static async Task<int> RunImportAsync(
         await Console.Error.WriteLineAsync(spotOptsError);
         return 1;
     }
+
     if (string.IsNullOrEmpty(spotOpts.QueuePlaylistId))
     {
         await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for import.");
         return 1;
     }
+
     var playlistId = spotOpts.QueuePlaylistId;
 
     var (targetProvider, targetError) = TryResolveProvider(scope.ServiceProvider, targetProviderKey);
@@ -505,6 +516,7 @@ static async Task<int> RunImportAsync(
         await Console.Error.WriteLineAsync(targetError);
         return 1;
     }
+
     if (targetProvider is null)
     {
         await Console.Error.WriteLineAsync(
@@ -518,6 +530,7 @@ static async Task<int> RunImportAsync(
         await Console.Error.WriteLineAsync(sourceError);
         return 1;
     }
+
     if (sourceProvider is null)
     {
         await Console.Error.WriteLineAsync(
@@ -536,7 +549,8 @@ static async Task<int> RunImportAsync(
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<ImportOrchestrator>>();
     var orchestrator = scope.ServiceProvider.GetRequiredService<ImportOrchestrator>();
 
-    var ctx = new ImportRunContext(sourceProviderKey, targetProviderKey, sourceProvider, targetProvider, mapper, playlistId, dryRun, limit);
+    var ctx = new ImportRunContext(sourceProviderKey, targetProviderKey, sourceProvider, targetProvider, mapper,
+        playlistId, dryRun, limit);
 
     try
     {

@@ -1,6 +1,5 @@
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using Musync.Domain;
 using Musync.Domain.Interfaces;
 using Musync.Infrastructure.Tidal.Models;
@@ -13,13 +12,19 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
     private const int BatchResolveChunkSize = 20;
 
     public IAsyncEnumerable<Album> GetSavedAlbumsAsync(CancellationToken ct)
-        => throw new NotSupportedException("Tidal does not support saved album enumeration.");
+    {
+        throw new NotSupportedException("Tidal does not support saved album enumeration.");
+    }
 
     public IAsyncEnumerable<Track> GetAlbumTracksAsync(string albumId, string albumName, CancellationToken ct)
-        => throw new NotSupportedException("Tidal does not support album track enumeration via this provider.");
+    {
+        throw new NotSupportedException("Tidal does not support album track enumeration via this provider.");
+    }
 
     public IAsyncEnumerable<Track> GetPlaylistTracksAsync(string playlistId, CancellationToken ct)
-        => throw new NotSupportedException("Tidal playlist operations are not yet supported.");
+    {
+        throw new NotSupportedException("Tidal playlist operations are not yet supported.");
+    }
 
     public async IAsyncEnumerable<Track> GetSavedTracksAsync([EnumeratorCancellation] CancellationToken ct)
     {
@@ -43,11 +48,13 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
             {
                 if (track.Relationships?.Artists?.Data is { } artistRefs)
                     foreach (var r in artistRefs)
-                        if (r.Id is not null) artistIds.Add(r.Id);
+                        if (r.Id is not null)
+                            artistIds.Add(r.Id);
 
                 if (track.Relationships?.Albums?.Data is { } albumRefs)
                     foreach (var r in albumRefs)
-                        if (r.Id is not null) albumIds.Add(r.Id);
+                        if (r.Id is not null)
+                            albumIds.Add(r.Id);
             }
 
             var artistNames = await BatchResolveArtistsAsync(artistIds, ct);
@@ -59,12 +66,12 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
                 if (attrs is null) continue;
 
                 var artistName = track.Relationships?.Artists?.Data is { Count: > 0 }
-                    && artistNames.TryGetValue(track.Relationships.Artists.Data[0].Id!, out var name)
+                                 && artistNames.TryGetValue(track.Relationships.Artists.Data[0].Id!, out var name)
                     ? name
                     : "";
 
                 var albumTitle = track.Relationships?.Albums?.Data is { Count: > 0 }
-                    && albumTitles.TryGetValue(track.Relationships.Albums.Data[0].Id!, out var title)
+                                 && albumTitles.TryGetValue(track.Relationships.Albums.Data[0].Id!, out var title)
                     ? title
                     : "";
 
@@ -81,10 +88,14 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
     }
 
     public Task AddTracksToPlaylistAsync(string playlistId, IEnumerable<string> trackUris, CancellationToken ct)
-        => throw new NotSupportedException("Tidal playlist modification is not yet supported.");
+    {
+        throw new NotSupportedException("Tidal playlist modification is not yet supported.");
+    }
 
     public Task RemoveTracksFromPlaylistAsync(string playlistId, IEnumerable<string> trackUris, CancellationToken ct)
-        => throw new NotSupportedException("Tidal playlist modification is not yet supported.");
+    {
+        throw new NotSupportedException("Tidal playlist modification is not yet supported.");
+    }
 
     private async Task<Dictionary<string, string>> BatchResolveArtistsAsync(
         HashSet<string> ids, CancellationToken ct)
@@ -107,10 +118,8 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
             if (page?.Included is null) continue;
 
             foreach (var artist in page.Included)
-            {
                 if (artist.Id is not null && artist.Attributes?.Name is not null)
                     result[artist.Id] = artist.Attributes.Name;
-            }
         }
 
         return result;
@@ -137,10 +146,8 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
             if (page?.Included is null) continue;
 
             foreach (var album in page.Included)
-            {
                 if (album.Id is not null && album.Attributes?.Title is not null)
                     result[album.Id] = album.Attributes.Title;
-            }
         }
 
         return result;

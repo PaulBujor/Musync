@@ -9,7 +9,8 @@ public sealed class FetchAndMap(
     AppDbContext db,
     ILogger<FetchAndMap> logger)
 {
-    public async Task<List<(string TargetTrackId, Track SourceTrack)>> ExecuteAsync(JobRun jobRun, ImportRunContext ctx, CancellationToken ct)
+    public async Task<List<(string TargetTrackId, Track SourceTrack)>> ExecuteAsync(JobRun jobRun, ImportRunContext ctx,
+        CancellationToken ct)
     {
         Log.ImportStep1Start(logger);
 

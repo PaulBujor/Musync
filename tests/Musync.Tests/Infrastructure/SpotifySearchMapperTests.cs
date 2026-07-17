@@ -32,7 +32,9 @@ public sealed class SpotifySearchMapperTests
     }
 
     private static bool IsIsrcQuery(HttpRequestMessage request)
-        => request.RequestUri!.Query.Contains("isrc", StringComparison.OrdinalIgnoreCase);
+    {
+        return request.RequestUri!.Query.Contains("isrc", StringComparison.OrdinalIgnoreCase);
+    }
 
     [Fact]
     public async Task IsrcMatch_ReturnsAuthoritativeHit()

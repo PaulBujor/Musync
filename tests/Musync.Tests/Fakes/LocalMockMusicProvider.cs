@@ -11,9 +11,9 @@ public sealed class LocalMockMusicProvider(
     Dictionary<string, List<Track>>? albumTracks = null)
     : IMusicProvider
 {
+    private readonly Dictionary<string, List<Track>>? _albumTracksOverride = albumTracks;
     private readonly List<Album> _savedAlbums = savedAlbums ?? [];
     private readonly List<Track> _savedTracks = savedTracks ?? [];
-    private readonly Dictionary<string, List<Track>>? _albumTracksOverride = albumTracks;
     private List<Track> _playlistTracks = playlistTracks ?? [];
 
     public IReadOnlyList<Track> PlaylistTracks => _playlistTracks.AsReadOnly();

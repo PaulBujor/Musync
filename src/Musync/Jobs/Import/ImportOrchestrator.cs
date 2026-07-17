@@ -31,7 +31,8 @@ public sealed class ImportOrchestrator(
         }
 
         using var _ = logger.BeginScope(new { JobRunId = jobRun.Id.ToString() });
-        Log.StartingJob(logger, $"import --source {ctx.SourceProviderName}", ctx.TargetProviderName, jobRun.Id.ToString());
+        Log.StartingJob(logger, $"import --source {ctx.SourceProviderName}", ctx.TargetProviderName,
+            jobRun.Id.ToString());
 
         async Task FinalizeAsync(string status, CancellationToken token, string? errorMessage = null)
         {

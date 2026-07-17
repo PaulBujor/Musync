@@ -4,9 +4,7 @@ namespace Musync.Infrastructure.Spotify.Models;
 
 public sealed class ArtistDto
 {
-    [JsonPropertyName("id")]
-    public string Id { get; init; } = "";
+    [JsonPropertyName("id")] public string Id { get; init; } = "";
 
-    [JsonPropertyName("name")]
-    public string Name { get; init; } = "";
+    [JsonPropertyName("name")] public string Name { get; init; } = "";
 }
