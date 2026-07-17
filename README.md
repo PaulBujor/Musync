@@ -185,16 +185,18 @@ machine (or to cloud storage) to move your setup — re-authenticate on the new 
 ### Tidal (`Tidal__*`)
 
 Tidal is supported as an **import source only** (`spotify import --source tidal`). It cannot be a
-queue-albums or import *target*.
+queue-albums or import *target*. Import reads the tracks in your Tidal collection ("My Collection →
+Tracks") via the v2 `userCollectionTracks` endpoint and maps them into your Spotify queue.
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `ClientId` | — | Tidal app client ID |
 | `RedirectUri` | `http://127.0.0.1:5000/callback` | OAuth redirect URI |
-| `ApiBaseUrl` | `https://openapi.tidal.com/v2` | Tidal v2 API base URL. Leave empty to disable Tidal entirely |
+| `ApiBaseUrl` | `https://openapi.tidal.com/v2/` | Tidal v2 API base URL (trailing slash required). Leave empty to disable Tidal entirely |
 | `AuthUrl` | `https://login.tidal.com/authorize` | OAuth authorisation endpoint |
 | `TokenUrl` | `https://auth.tidal.com/v1/oauth2/token` | OAuth token endpoint |
 | `Scopes` | `collection.read` | OAuth scopes |
+| `Locale` | `en-US` | `locale` sent on v2 collection reads |
 | `MaxRetries` | `3` | HTTP retry count |
 
 ## Project Structure

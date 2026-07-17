@@ -141,7 +141,8 @@ if (!string.IsNullOrEmpty(tidalConfig.ApiBaseUrl))
         .AddStandardResilienceHandler(o => ConfigureReadResilience(o, tidalConfig.MaxRetries));
     builder.Services.AddKeyedSingleton<IMusicProvider>(ProviderKeys.Tidal, (sp, _) =>
         new TidalMusicProvider(
-            sp.GetRequiredService<IHttpClientFactory>().CreateClient("tidal-music")));
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient("tidal-music"),
+            sp.GetRequiredService<IOptions<TidalOptions>>().Value.Locale));
 }
 
 // Track mapper — keyed by target provider
