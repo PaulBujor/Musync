@@ -17,7 +17,6 @@ public sealed class TidalTokenHandler(
     private const string TokenUrlConst = "https://auth.tidal.com/v1/oauth2/token";
     private readonly TidalOptions _options = options.Value;
 
-    protected override string TokenUrl => TokenUrlConst;
     protected override string ProviderName => "tidal";
 
     protected override HttpRequestMessage CreateRefreshRequest(string refreshToken)

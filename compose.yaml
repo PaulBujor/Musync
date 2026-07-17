@@ -15,16 +15,3 @@
       timeout: 5s
       retries: 5
 
-  valkey:
-    image: valkey/valkey:9
-    ports:
-      - "6379:6379"
-    volumes:
-      - ./Data/valkey:/data
-    healthcheck:
-      test: ["CMD", "valkey-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-

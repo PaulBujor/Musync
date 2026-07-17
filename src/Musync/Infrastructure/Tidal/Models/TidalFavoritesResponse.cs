@@ -140,11 +140,3 @@ public class TidalAlbumAttributes
     [JsonPropertyName("title")]
     public string? Title { get; set; }
 }
-
-// ── User me response ──────────────────────────────────────────
-
-public class TidalUserMeResponse
-{
-    [JsonPropertyName("data")]
-    public TidalResourceIdentifier? Data { get; set; }
-}

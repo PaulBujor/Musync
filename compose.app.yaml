@@ -7,9 +7,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      valkey:
-        condition: service_healthy
     environment:
       Database__Provider: "Postgres"
       ConnectionStrings__Postgres: "Host=postgres;Database=musync;Username=musync;Password=musync"
-      ConnectionStrings__Valkey: "valkey:6379"

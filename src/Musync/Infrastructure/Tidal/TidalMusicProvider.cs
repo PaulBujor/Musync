@@ -83,17 +83,6 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
     public Task RemoveTracksFromPlaylistAsync(string playlistId, IEnumerable<string> trackUris, CancellationToken ct)
         => throw new NotSupportedException("Tidal playlist modification is not yet supported.");
 
-    private async Task<string> GetUserIdAsync(CancellationToken ct)
-    {
-        var response = await http.GetAsync("/users/me", ct);
-        response.EnsureSuccessStatusCode();
-
-        var body = await response.Content
-            .ReadFromJsonAsync(TidalApiJsonContext.Default.TidalUserMeResponse, ct);
-
-        return body?.Data?.Id ?? throw new InvalidOperationException("Could not determine Tidal user ID.");
-    }
-
     private async Task<Dictionary<string, string>> BatchResolveArtistsAsync(
         HashSet<string> ids, CancellationToken ct)
     {

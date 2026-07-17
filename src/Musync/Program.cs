@@ -65,6 +65,7 @@ builder.Services.AddScoped<ImportStep3_GenerateReport>();
 builder.Services.AddScoped<ReconcileQueueJob>();
 
 // Spotify auth + HTTP
+var spotifyMaxRetries = builder.Configuration.GetValue("Spotify:MaxRetries", 3);
 builder.Services.AddScoped<ISpotifyAuthenticator, SpotifyAuthenticator>();
 builder.Services.AddTransient<SpotifyTokenHandler>();
 builder.Services
@@ -79,6 +80,7 @@ builder.Services
         options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
         options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
         options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
+        options.Retry.MaxRetryAttempts = spotifyMaxRetries;
         options.Retry.DelayGenerator = args =>
         {
             if (args.Outcome.Result?.Headers.RetryAfter?.Delta is { } delta)
@@ -134,6 +136,7 @@ if (!string.IsNullOrEmpty(tidalConfig.ApiBaseUrl))
             options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
             options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
             options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
+            options.Retry.MaxRetryAttempts = tidalConfig.MaxRetries;
         });
     builder.Services.AddKeyedSingleton<IMusicProvider>("tidal", (sp, _) =>
         new TidalMusicProvider(
@@ -153,7 +156,7 @@ builder.Services
             options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
             options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
             options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
-            options.Retry.MaxRetryAttempts = 3;
+            options.Retry.MaxRetryAttempts = spotifyMaxRetries;
         });
 builder.Services.AddKeyedSingleton<ITrackMapper>("spotify", (sp, _) =>
 {
@@ -161,7 +164,7 @@ builder.Services.AddKeyedSingleton<ITrackMapper>("spotify", (sp, _) =>
     var logger = sp.GetRequiredService<ILogger<SpotifySearchMapper>>();
     return new SpotifySearchMapper(httpClient, logger);
 });
-builder.Services.AddKeyedSingleton<ITrackMapper>("tidal", (_, _) => new TidalSearchMapper());
+// Tidal is import-source only; there is no track mapper for importing *into* Tidal.
 
 var host = builder.Build();
 
@@ -334,6 +337,13 @@ static async Task<int> RunQueueAlbumsAsync(
     IServiceProvider services,
     CancellationToken ct)
 {
+    if (providerKey != "spotify")
+    {
+        await Console.Error.WriteLineAsync(
+            "queue-albums is only supported for Spotify. Tidal is import-source only — use 'spotify import --source tidal'.");
+        return 1;
+    }
+
     await using var scope = services.CreateAsyncScope();
     var provider = scope.ServiceProvider.GetKeyedService<IMusicProvider>(providerKey);
     if (provider is null)
@@ -349,36 +359,14 @@ static async Task<int> RunQueueAlbumsAsync(
     var step3 = scope.ServiceProvider.GetRequiredService<SyncStep3_GenerateReport>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<QueueAlbumsOrchestrator>>();
 
-    string playlistId;
-    int maxParallelism;
-
-    if (providerKey == "spotify")
+    var opts = scope.ServiceProvider.GetRequiredService<IOptions<SpotifyOptions>>().Value;
+    if (string.IsNullOrEmpty(opts.QueuePlaylistId))
     {
-        var opts = scope.ServiceProvider.GetRequiredService<IOptions<SpotifyOptions>>().Value;
-        if (string.IsNullOrEmpty(opts.QueuePlaylistId))
-        {
-            await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for sync.");
-            return 1;
-        }
-        playlistId = opts.QueuePlaylistId;
-        maxParallelism = opts.MaxConcurrentRequests;
-    }
-    else if (providerKey == "tidal")
-    {
-        var opts = scope.ServiceProvider.GetRequiredService<IOptions<TidalOptions>>().Value;
-        if (string.IsNullOrEmpty(opts.QueuePlaylistId))
-        {
-            await Console.Error.WriteLineAsync("Tidal:QueuePlaylistId is required for sync.");
-            return 1;
-        }
-        playlistId = opts.QueuePlaylistId;
-        maxParallelism = opts.MaxConcurrentRequests;
-    }
-    else
-    {
-        await Console.Error.WriteLineAsync($"Unknown provider: {providerKey}");
+        await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for sync.");
         return 1;
     }
+    var playlistId = opts.QueuePlaylistId;
+    var maxParallelism = opts.MaxConcurrentRequests;
 
     var ctx = new SyncRunContext(providerKey, provider, playlistId, maxParallelism, dryRun, limit);
     var orchestrator = new QueueAlbumsOrchestrator(db, step1, step2, step3, logger);
@@ -476,6 +464,12 @@ static async Task<int> RunImportAsync(
         await Console.Error.WriteLineAsync("Source and target providers must be different.");
         return 1;
     }
+    if (targetProviderKey == "tidal")
+    {
+        await Console.Error.WriteLineAsync(
+            "Tidal cannot be an import target — it is import-source only. Use 'spotify import --source tidal'.");
+        return 1;
+    }
 
     await using var scope = services.CreateAsyncScope();
 
@@ -509,27 +503,13 @@ static async Task<int> RunImportAsync(
     var step3 = scope.ServiceProvider.GetRequiredService<ImportStep3_GenerateReport>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<ImportOrchestrator>>();
 
-    string playlistId;
-    if (targetProviderKey == "spotify")
+    var spotOpts = scope.ServiceProvider.GetRequiredService<IOptions<SpotifyOptions>>().Value;
+    if (string.IsNullOrEmpty(spotOpts.QueuePlaylistId))
     {
-        var spotOpts = scope.ServiceProvider.GetRequiredService<IOptions<SpotifyOptions>>().Value;
-        if (string.IsNullOrEmpty(spotOpts.QueuePlaylistId))
-        {
-            await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for import.");
-            return 1;
-        }
-        playlistId = spotOpts.QueuePlaylistId;
+        await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for import.");
+        return 1;
     }
-    else
-    {
-        var tidalOpts = scope.ServiceProvider.GetRequiredService<IOptions<TidalOptions>>().Value;
-        if (string.IsNullOrEmpty(tidalOpts.QueuePlaylistId))
-        {
-            await Console.Error.WriteLineAsync("Tidal:QueuePlaylistId is required for import.");
-            return 1;
-        }
-        playlistId = tidalOpts.QueuePlaylistId;
-    }
+    var playlistId = spotOpts.QueuePlaylistId;
 
     var ctx = new ImportRunContext(sourceProviderKey, targetProviderKey, sourceProvider, targetProvider, mapper, playlistId, dryRun, limit);
     var orchestrator = new ImportOrchestrator(db, step1, step2, step3, logger);

@@ -1,9 +1,4 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace Musync.Options;
 
-public sealed record TidalOptions : ProviderOptionsBase
-{
-    public string QueuePlaylistId { get; init; } = "";
-    [Range(1, 10)] public int MaxConcurrentRequests { get; init; } = 3;
-}
+// Tidal is import-source only; it needs no queue playlist or write concurrency knobs.
+public sealed record TidalOptions : ProviderOptionsBase;

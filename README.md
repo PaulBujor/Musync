@@ -60,20 +60,21 @@ Global options (available on any command):
 | `--dry-run` | Preview changes without mutating any provider |
 | `--limit <n>` | Cap the number of items processed |
 
-### `<provider> queue-albums`
+### `spotify queue-albums`
 
-Syncs your saved albums on that provider into its configured queue playlist.
+Syncs your saved Spotify albums into the configured queue playlist.
 
 ```bash
 dotnet run --project src/Musync -- spotify queue-albums
-dotnet run --project src/Musync -- tidal queue-albums
 ```
 
 Runs three steps: snapshot & diff, add new tracks, report. (Token refresh happens transparently in the HTTP pipeline.)
 
-### `<provider> import --source <provider>`
+> Tidal is an import **source** only — `tidal queue-albums` and imports *into* Tidal are not supported.
 
-Imports tracks from a source provider into the target provider's queue playlist. Source and target must differ.
+### `<target> import --source <source>`
+
+Imports tracks from a source provider into the target provider's queue playlist. Source and target must differ, and the target must be Spotify.
 
 ```bash
 # Import your Tidal collection into the Spotify queue
@@ -174,24 +175,24 @@ For portable use, set `ConnectionStrings__Sqlite` to a path inside your Google D
 | `AuthUrl` | `https://accounts.spotify.com/authorize` | OAuth authorisation endpoint |
 | `TokenUrl` | `https://accounts.spotify.com/api/token` | OAuth token endpoint |
 | `Scopes` | `user-library-read playlist-modify-public ...` | OAuth scopes |
-| `RequestDelayMs` | `100` | Delay between API requests |
-| `MaxRetries` | `3` | HTTP retry count |
+| `MaxRetries` | `3` | HTTP retry count for reads (playlist writes are never retried) |
 | `MaxConcurrentRequests` | `3` | Parallel album track fetches |
 
 ### Tidal (`Tidal__*`)
+
+Tidal is supported as an **import source only** (`spotify import --source tidal`). It cannot be a
+queue-albums or import *target*.
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `ClientId` | — | Tidal app client ID |
 | `ClientSecret` | — | Tidal app client secret |
-| `QueuePlaylistId` | — | Target playlist ID (for `tidal queue-albums` / imports into Tidal) |
 | `RedirectUri` | `http://127.0.0.1:5000/callback` | OAuth redirect URI |
 | `ApiBaseUrl` | `https://openapi.tidal.com/v2` | Tidal v2 API base URL. Leave empty to disable Tidal entirely |
 | `AuthUrl` | `https://login.tidal.com/authorize` | OAuth authorisation endpoint |
 | `TokenUrl` | `https://auth.tidal.com/v1/oauth2/token` | OAuth token endpoint |
 | `Scopes` | `collection.read` | OAuth scopes |
 | `MaxRetries` | `3` | HTTP retry count |
-| `MaxConcurrentRequests` | `3` | Parallel album track fetches |
 
 ## Project Structure
 
@@ -207,7 +208,7 @@ Musync.slnx
 │   ├── Infrastructure/
 │   │   ├── Auth/             # Shared PKCE authenticator & token handler bases
 │   │   ├── Spotify/          # Spotify client, auth, token handler, models, SpotifySearchMapper
-│   │   ├── Tidal/            # Tidal client, auth, token handler, models, TidalSearchMapper
+│   │   ├── Tidal/            # Tidal client, auth, token handler, models (import source only)
 │   │   └── Persistence/      # EF Core AppDbContext
 │   ├── Jobs/                 # QueueAlbumsOrchestrator, ImportOrchestrator + numbered step classes
 │   └── Migrations/           # EF Core migrations

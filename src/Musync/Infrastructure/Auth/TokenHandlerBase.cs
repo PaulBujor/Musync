@@ -20,7 +20,6 @@ public abstract class TokenHandlerBase(
     private string? _accessToken;
     private DateTime _tokenExpiry = DateTime.MinValue;
 
-    protected abstract string TokenUrl { get; }
     protected abstract string ProviderName { get; }
 
     protected abstract HttpRequestMessage CreateRefreshRequest(string refreshToken);
