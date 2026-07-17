@@ -2,11 +2,11 @@ using System.Text.Json.Serialization;
 
 namespace Musync.Infrastructure.Spotify.Models;
 
-public class PagedResponse<T>
+public sealed class PagedResponse<T>
 {
     [JsonPropertyName("items")]
-    public List<T> Items { get; set; } = [];
+    public List<T> Items { get; init; } = [];
 
     [JsonPropertyName("next")]
-    public string? Next { get; set; }
+    public string? Next { get; init; }
 }

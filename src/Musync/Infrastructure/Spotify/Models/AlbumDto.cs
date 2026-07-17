@@ -2,14 +2,14 @@ using System.Text.Json.Serialization;
 
 namespace Musync.Infrastructure.Spotify.Models;
 
-public class AlbumDto
+public sealed class AlbumDto
 {
     [JsonPropertyName("id")]
-    public string Id { get; set; } = "";
+    public string Id { get; init; } = "";
 
     [JsonPropertyName("name")]
-    public string Name { get; set; } = "";
+    public string Name { get; init; } = "";
 
     [JsonPropertyName("artists")]
-    public List<ArtistDto> Artists { get; set; } = [];
+    public List<ArtistDto> Artists { get; init; } = [];
 }

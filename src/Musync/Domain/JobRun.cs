@@ -12,7 +12,7 @@ public sealed class JobRun
     public DateTime? FinishedAt { get; set; }
 
     [MaxLength(50)]
-    public string Status { get; set; } = "running";
+    public string Status { get; set; } = JobStatus.Running;
 
     [MaxLength(50)]
     public string? ProviderName { get; set; }
@@ -29,6 +29,10 @@ public sealed class JobRun
     public int TracksRemovedManual { get; set; }
     public int TracksSkipped { get; set; }
     public int NewAlbumsEncountered { get; set; }
+
+    /// <summary>Tracks matched to a target-provider id during import (queue-albums leaves this 0).</summary>
+    public int TracksMapped { get; set; }
+
     public int QueueSizeAfter { get; set; }
 
     [MaxLength(2000)]

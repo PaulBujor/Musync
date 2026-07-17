@@ -2,8 +2,8 @@ using System.Text.Json.Serialization;
 
 namespace Musync.Infrastructure.Spotify.Models;
 
-public class SavedAlbumItem
+public sealed class SavedAlbumItem
 {
     [JsonPropertyName("album")]
-    public AlbumDto Album { get; set; } = null!;
+    public AlbumDto Album { get; init; } = null!;
 }

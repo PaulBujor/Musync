@@ -9,6 +9,9 @@ namespace Musync.Infrastructure.Tidal;
 
 public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
 {
+    // Max ids per Tidal filter[id] batch when resolving artist/album names.
+    private const int BatchResolveChunkSize = 20;
+
     public IAsyncEnumerable<Album> GetSavedAlbumsAsync(CancellationToken ct)
         => throw new NotSupportedException("Tidal does not support saved album enumeration.");
 
@@ -89,9 +92,9 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
         var result = new Dictionary<string, string>();
         var idList = ids.ToList();
 
-        for (var i = 0; i < idList.Count; i += 20)
+        for (var i = 0; i < idList.Count; i += BatchResolveChunkSize)
         {
-            var batch = idList.Skip(i).Take(20);
+            var batch = idList.Skip(i).Take(BatchResolveChunkSize);
             var filter = string.Join(",", batch);
             var url = $"/artists?filter[id]={filter}";
 
@@ -119,9 +122,9 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
         var result = new Dictionary<string, string>();
         var idList = ids.ToList();
 
-        for (var i = 0; i < idList.Count; i += 20)
+        for (var i = 0; i < idList.Count; i += BatchResolveChunkSize)
         {
-            var batch = idList.Skip(i).Take(20);
+            var batch = idList.Skip(i).Take(BatchResolveChunkSize);
             var filter = string.Join(",", batch);
             var url = $"/albums?filter[id]={filter}";
 

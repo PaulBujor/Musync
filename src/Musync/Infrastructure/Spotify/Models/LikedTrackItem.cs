@@ -2,8 +2,8 @@ using System.Text.Json.Serialization;
 
 namespace Musync.Infrastructure.Spotify.Models;
 
-public class LikedTrackItem
+public sealed class LikedTrackItem
 {
     [JsonPropertyName("track")]
-    public SpotifyTrackDto Track { get; set; } = null!;
+    public SpotifyTrackDto Track { get; init; } = null!;
 }

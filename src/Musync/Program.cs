@@ -6,13 +6,17 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Musync;
 using Musync.Domain.Interfaces;
 using Musync.Infrastructure.Persistence;
 using Musync.Infrastructure.Spotify;
 using Musync.Infrastructure.Tidal;
 using Musync.Jobs;
+using Musync.Jobs.Import;
+using Musync.Jobs.Sync;
 using Musync.Options;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -72,13 +76,16 @@ builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(keyRingPath))
     .SetApplicationName("Musync");
 
-// Step classes (providers come via RunContext, not DI)
-builder.Services.AddScoped<SyncStep1_SnapshotAndDiff>();
-builder.Services.AddScoped<SyncStep2_AddNewTracks>();
-builder.Services.AddScoped<SyncStep3_GenerateReport>();
-builder.Services.AddScoped<ImportStep1_FetchAndMap>();
-builder.Services.AddScoped<ImportStep2_AddToQueue>();
-builder.Services.AddScoped<ImportStep3_GenerateReport>();
+// Orchestrators + their step classes (providers come via RunContext, not DI).
+// GenerateReport exists in both flows, so those two are fully qualified.
+builder.Services.AddScoped<QueueAlbumsOrchestrator>();
+builder.Services.AddScoped<SnapshotAndDiff>();
+builder.Services.AddScoped<AddNewTracks>();
+builder.Services.AddScoped<Musync.Jobs.Sync.GenerateReport>();
+builder.Services.AddScoped<ImportOrchestrator>();
+builder.Services.AddScoped<FetchAndMap>();
+builder.Services.AddScoped<AddToQueue>();
+builder.Services.AddScoped<Musync.Jobs.Import.GenerateReport>();
 builder.Services.AddScoped<ReconcileQueueJob>();
 
 // Spotify auth + HTTP
@@ -92,19 +99,7 @@ builder.Services
         client.BaseAddress = new Uri(opts.ApiBaseUrl);
     })
     .AddHttpMessageHandler<SpotifyTokenHandler>()
-    .AddStandardResilienceHandler(options =>
-    {
-        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
-        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
-        options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
-        options.Retry.MaxRetryAttempts = spotifyMaxRetries;
-        options.Retry.DelayGenerator = args =>
-        {
-            if (args.Outcome.Result?.Headers.RetryAfter?.Delta is { } delta)
-                return ValueTask.FromResult<TimeSpan?>(delta);
-            return ValueTask.FromResult<TimeSpan?>(null);
-        };
-    });
+    .AddStandardResilienceHandler(o => ConfigureReadResilience(o, spotifyMaxRetries));
 
 // Playlist add/remove are non-idempotent — a retried lost-but-committed POST duplicates tracks.
 // A separate client keeps timeouts and the circuit breaker but never retries writes.
@@ -115,15 +110,9 @@ builder.Services
         client.BaseAddress = new Uri(opts.ApiBaseUrl);
     })
     .AddHttpMessageHandler<SpotifyTokenHandler>()
-    .AddStandardResilienceHandler(options =>
-    {
-        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
-        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
-        options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
-        options.Retry.ShouldHandle = _ => ValueTask.FromResult(false);
-    });
+    .AddStandardResilienceHandler(ConfigureWriteResilience);
 
-builder.Services.AddKeyedSingleton<IMusicProvider>("spotify", (sp, _) =>
+builder.Services.AddKeyedSingleton<IMusicProvider>(ProviderKeys.Spotify, (sp, _) =>
 {
     var factory = sp.GetRequiredService<IHttpClientFactory>();
     return new SpotifyMusicProvider(
@@ -148,14 +137,8 @@ if (!string.IsNullOrEmpty(tidalConfig.ApiBaseUrl))
                 new MediaTypeWithQualityHeaderValue("application/vnd.api+json"));
         })
         .AddHttpMessageHandler<TidalTokenHandler>()
-        .AddStandardResilienceHandler(options =>
-        {
-            options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
-            options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
-            options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
-            options.Retry.MaxRetryAttempts = tidalConfig.MaxRetries;
-        });
-    builder.Services.AddKeyedSingleton<IMusicProvider>("tidal", (sp, _) =>
+        .AddStandardResilienceHandler(o => ConfigureReadResilience(o, tidalConfig.MaxRetries));
+    builder.Services.AddKeyedSingleton<IMusicProvider>(ProviderKeys.Tidal, (sp, _) =>
         new TidalMusicProvider(
             sp.GetRequiredService<IHttpClientFactory>().CreateClient("tidal-music")));
 }
@@ -168,14 +151,8 @@ builder.Services
         client.BaseAddress = new Uri(opts.ApiBaseUrl);
     })
     .AddHttpMessageHandler<SpotifyTokenHandler>()
-        .AddStandardResilienceHandler(options =>
-        {
-            options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
-            options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
-            options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
-            options.Retry.MaxRetryAttempts = spotifyMaxRetries;
-        });
-builder.Services.AddKeyedSingleton<ITrackMapper>("spotify", (sp, _) =>
+    .AddStandardResilienceHandler(o => ConfigureReadResilience(o, spotifyMaxRetries));
+builder.Services.AddKeyedSingleton<ITrackMapper>(ProviderKeys.Spotify, (sp, _) =>
 {
     var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("track-mapper");
     var logger = sp.GetRequiredService<ILogger<SpotifySearchMapper>>();
@@ -218,6 +195,19 @@ using (var scope = host.Services.CreateScope())
             WHERE "RemovedAt" IS NULL;
             """;
         cmd.ExecuteNonQuery();
+
+        // EnsureCreated adds new columns only to fresh databases; patch existing ones in place.
+        // SQLite has no ADD COLUMN IF NOT EXISTS, so guard on pragma_table_info.
+        using var columnCheck = connection.CreateCommand();
+        columnCheck.CommandText =
+            "SELECT COUNT(*) FROM pragma_table_info('JobRuns') WHERE name = 'TracksMapped';";
+        if (Convert.ToInt64(columnCheck.ExecuteScalar()) == 0)
+        {
+            using var addColumn = connection.CreateCommand();
+            addColumn.CommandText =
+                """ALTER TABLE "JobRuns" ADD COLUMN "TracksMapped" INTEGER NOT NULL DEFAULT 0;""";
+            addColumn.ExecuteNonQuery();
+        }
     }
     else
     {
@@ -240,8 +230,8 @@ var limitOption = new Option<int?>("--limit") { Recursive = true, Description = 
 rootCommand.Add(dryRunOption);
 rootCommand.Add(limitOption);
 
-var spotifyCmd = new Command("spotify", "Spotify operations");
-var tidalCmd = new Command("tidal", "Tidal operations");
+var spotifyCmd = new Command(ProviderKeys.Spotify, "Spotify operations");
+var tidalCmd = new Command(ProviderKeys.Tidal, "Tidal operations");
 rootCommand.Add(spotifyCmd);
 rootCommand.Add(tidalCmd);
 
@@ -255,13 +245,13 @@ var tidalQueueAlbums = new Command("queue-albums", "Sync saved albums to the que
 tidalCmd.Add(tidalQueueAlbums);
 
 var spotifySourceOption = new Option<string>("--source") { Description = "Source provider to import from" }
-    .AcceptOnlyFromAmong("spotify", "tidal");
+    .AcceptOnlyFromAmong(ProviderKeys.All);
 var spotifyImport = new Command("import", "Import tracks from another provider");
 spotifyImport.Add(spotifySourceOption);
 spotifyCmd.Add(spotifyImport);
 
 var tidalSourceOption = new Option<string>("--source") { Description = "Source provider to import from" }
-    .AcceptOnlyFromAmong("spotify", "tidal");
+    .AcceptOnlyFromAmong(ProviderKeys.All);
 var tidalImport = new Command("import", "Import tracks from another provider");
 tidalImport.Add(tidalSourceOption);
 tidalCmd.Add(tidalImport);
@@ -312,13 +302,14 @@ if (invokedCommand.Name == "import")
         ? importParent.Command.Name
         : throw new InvalidOperationException("import must be nested under a provider command");
 
-    var sourceProviderKey = targetProviderKey == "spotify"
+    var sourceProviderKey = targetProviderKey == ProviderKeys.Spotify
         ? parseResult.GetValue(spotifySourceOption)
         : parseResult.GetValue(tidalSourceOption);
 
     if (string.IsNullOrEmpty(sourceProviderKey))
     {
-        await Console.Error.WriteLineAsync("--source is required. Valid values: spotify, tidal");
+        await Console.Error.WriteLineAsync(
+            $"--source is required. Valid values: {string.Join(", ", ProviderKeys.All)}");
         return 1;
     }
 
@@ -330,7 +321,7 @@ if (invokedCommand == syncCommand)
 {
     var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Musync");
     Log.DeprecatedCommand(logger, "sync", "spotify queue-albums");
-    var result = await RunQueueAlbumsAsync("spotify", dryRun, limit, host.Services, cts.Token);
+    var result = await RunQueueAlbumsAsync(ProviderKeys.Spotify, dryRun, limit, host.Services, cts.Token);
     return result == 0 ? 3 : result;
 }
 
@@ -339,7 +330,7 @@ if (invokedCommand == importTidalCommand)
 {
     var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Musync");
     Log.DeprecatedCommand(logger, "import-tidal", "spotify import --source tidal");
-    var result = await RunImportAsync("spotify", "tidal", dryRun, limit, host.Services, cts.Token);
+    var result = await RunImportAsync(ProviderKeys.Spotify, ProviderKeys.Tidal, dryRun, limit, host.Services, cts.Token);
     return result == 0 ? 3 : result;
 }
 
@@ -354,7 +345,7 @@ static async Task<int> RunQueueAlbumsAsync(
     IServiceProvider services,
     CancellationToken ct)
 {
-    if (providerKey != "spotify")
+    if (providerKey != ProviderKeys.Spotify)
     {
         await Console.Error.WriteLineAsync(
             "queue-albums is only supported for Spotify. Tidal is import-source only — use 'spotify import --source tidal'.");
@@ -384,17 +375,11 @@ static async Task<int> RunQueueAlbumsAsync(
         return 1;
     }
 
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var step1 = scope.ServiceProvider.GetRequiredService<SyncStep1_SnapshotAndDiff>();
-    var step2 = scope.ServiceProvider.GetRequiredService<SyncStep2_AddNewTracks>();
-    var step3 = scope.ServiceProvider.GetRequiredService<SyncStep3_GenerateReport>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<QueueAlbumsOrchestrator>>();
+    var orchestrator = scope.ServiceProvider.GetRequiredService<QueueAlbumsOrchestrator>();
 
-    var playlistId = opts.QueuePlaylistId;
-    var maxParallelism = opts.MaxConcurrentRequests;
-
-    var ctx = new SyncRunContext(providerKey, provider, playlistId, maxParallelism, dryRun, limit);
-    var orchestrator = new QueueAlbumsOrchestrator(db, step1, step2, step3, logger);
+    var ctx = new SyncRunContext(
+        providerKey, provider, opts.QueuePlaylistId, opts.MaxConcurrentRequests, dryRun, limit);
 
     try
     {
@@ -419,7 +404,7 @@ static async Task<int> RunReconcileAsync(
     IServiceProvider services,
     CancellationToken ct)
 {
-    if (providerKey != "spotify")
+    if (providerKey != ProviderKeys.Spotify)
     {
         await Console.Error.WriteLineAsync($"reconcile-queue is not supported for provider: {providerKey}");
         return 1;
@@ -476,13 +461,12 @@ static async Task<int> RunImportAsync(
     IServiceProvider services,
     CancellationToken ct)
 {
-    var validProviders = new[] { "spotify", "tidal" };
-    if (!validProviders.Contains(targetProviderKey))
+    if (!ProviderKeys.All.Contains(targetProviderKey))
     {
         await Console.Error.WriteLineAsync($"Unknown target provider: {targetProviderKey}");
         return 1;
     }
-    if (!validProviders.Contains(sourceProviderKey))
+    if (!ProviderKeys.All.Contains(sourceProviderKey))
     {
         await Console.Error.WriteLineAsync($"Unknown source provider: {sourceProviderKey}");
         return 1;
@@ -492,7 +476,7 @@ static async Task<int> RunImportAsync(
         await Console.Error.WriteLineAsync("Source and target providers must be different.");
         return 1;
     }
-    if (targetProviderKey == "tidal")
+    if (targetProviderKey == ProviderKeys.Tidal)
     {
         await Console.Error.WriteLineAsync(
             "Tidal cannot be an import target — it is import-source only. Use 'spotify import --source tidal'.");
@@ -549,14 +533,10 @@ static async Task<int> RunImportAsync(
         return 1;
     }
 
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var step1 = scope.ServiceProvider.GetRequiredService<ImportStep1_FetchAndMap>();
-    var step2 = scope.ServiceProvider.GetRequiredService<ImportStep2_AddToQueue>();
-    var step3 = scope.ServiceProvider.GetRequiredService<ImportStep3_GenerateReport>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<ImportOrchestrator>>();
+    var orchestrator = scope.ServiceProvider.GetRequiredService<ImportOrchestrator>();
 
     var ctx = new ImportRunContext(sourceProviderKey, targetProviderKey, sourceProvider, targetProvider, mapper, playlistId, dryRun, limit);
-    var orchestrator = new ImportOrchestrator(db, step1, step2, step3, logger);
 
     try
     {
@@ -600,4 +580,27 @@ static (IMusicProvider? Provider, string? Error) TryResolveProvider(IServiceProv
     {
         return (null, $"Invalid {key} configuration: {string.Join("; ", ex.Failures)}");
     }
+}
+
+static void ConfigureTimeouts(HttpStandardResilienceOptions options)
+{
+    options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
+    options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
+    options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
+}
+
+// Reads: retry up to maxRetries, honouring a Retry-After header when present.
+static void ConfigureReadResilience(HttpStandardResilienceOptions options, int maxRetries)
+{
+    ConfigureTimeouts(options);
+    options.Retry.MaxRetryAttempts = maxRetries;
+    options.Retry.DelayGenerator = args =>
+        ValueTask.FromResult(args.Outcome.Result?.Headers.RetryAfter?.Delta);
+}
+
+// Writes (playlist add/remove): non-idempotent, so keep timeouts + circuit breaker but never retry.
+static void ConfigureWriteResilience(HttpStandardResilienceOptions options)
+{
+    ConfigureTimeouts(options);
+    options.Retry.ShouldHandle = _ => ValueTask.FromResult(false);
 }

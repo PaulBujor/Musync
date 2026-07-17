@@ -4,14 +4,14 @@ using Microsoft.Extensions.Logging;
 using Musync.Domain;
 using Musync.Infrastructure.Persistence;
 
-namespace Musync.Jobs;
+namespace Musync.Jobs.Sync;
 
-public sealed class SyncStep1_SnapshotAndDiff(
+public sealed class SnapshotAndDiff(
     AppDbContext db,
     HybridCache cache,
-    ILogger<SyncStep1_SnapshotAndDiff> logger)
+    ILogger<SnapshotAndDiff> logger)
 {
-    public async Task ExecuteAsync(JobRun jobRun, SyncRunContext ctx, CancellationToken ct)
+    public async Task<SnapshotResult> ExecuteAsync(JobRun jobRun, SyncRunContext ctx, CancellationToken ct)
     {
         Log.Step1Start(logger);
 
@@ -30,7 +30,6 @@ public sealed class SyncStep1_SnapshotAndDiff(
         var likedTrackIds = await likedTrackIdsTask;
 
         var currentTrackIds = currentPlaylistTracks.Select(t => t.Id).ToHashSet();
-        ctx.CurrentPlaylistTrackIds = currentTrackIds;
 
         var likedInPlaylist = currentTrackIds.Where(likedTrackIds.Contains).ToList();
         if (likedInPlaylist.Count > 0)
@@ -45,9 +44,10 @@ public sealed class SyncStep1_SnapshotAndDiff(
                 await ctx.Target.RemoveTracksFromPlaylistAsync(ctx.PlaylistId, likedInPlaylist, ct);
 
                 var now = DateTime.UtcNow;
-                const int batchSize = 500;
+                // Chunk the IN-clause lookups so we never build an oversized SQL parameter list.
+                const int historyLookupChunkSize = 500;
                 var entries = new List<TrackHistory>();
-                foreach (var batch in likedInPlaylist.Chunk(batchSize))
+                foreach (var batch in likedInPlaylist.Chunk(historyLookupChunkSize))
                 {
                     var batchEntries = await db.TrackHistories
                         .Where(x => x.Provider == ctx.ProviderName
@@ -58,7 +58,7 @@ public sealed class SyncStep1_SnapshotAndDiff(
                 foreach (var entry in entries)
                 {
                     entry.RemovedAt = now;
-                    entry.RemovalReason = "liked";
+                    entry.RemovalReason = RemovalReasons.Liked;
                 }
             }
 
@@ -85,14 +85,12 @@ public sealed class SyncStep1_SnapshotAndDiff(
                 foreach (var entry in manualRemovals)
                 {
                     entry.RemovedAt = now;
-                    entry.RemovalReason = "manual";
+                    entry.RemovalReason = RemovalReasons.Manual;
                 }
             }
 
             jobRun.TracksRemovedManual = manualRemovals.Count;
         }
-
-        ctx.QueueSizeAfterStep1 = currentTrackIds.Count - likedInPlaylist.Count;
 
         if (!ctx.DryRun && (likedInPlaylist.Count > 0 || manualRemovals.Count > 0))
         {
@@ -100,6 +98,8 @@ public sealed class SyncStep1_SnapshotAndDiff(
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
         }
+
+        return new SnapshotResult(currentTrackIds, currentTrackIds.Count - likedInPlaylist.Count);
     }
 
     private async Task<List<Track>> FetchPlaylistAsync(SyncRunContext ctx, CancellationToken ct)
@@ -110,3 +110,6 @@ public sealed class SyncStep1_SnapshotAndDiff(
         return tracks;
     }
 }
+
+/// <summary>State captured by snapshot &amp; diff and passed to the add-tracks step.</summary>
+public sealed record SnapshotResult(IReadOnlySet<string> CurrentPlaylistTrackIds, int QueueSizeAfterRemovals);

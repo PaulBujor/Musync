@@ -1,8 +1,8 @@
 using Musync.Domain.Interfaces;
 
-namespace Musync.Jobs;
+namespace Musync.Jobs.Import;
 
-public record ImportRunContext(
+public sealed record ImportRunContext(
     string SourceProviderName,
     string TargetProviderName,
     IMusicProvider Source,

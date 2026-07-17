@@ -1,11 +1,11 @@
 using Microsoft.Extensions.Logging;
 using Musync.Domain;
 
-namespace Musync.Jobs;
+namespace Musync.Jobs.Sync;
 
-public sealed class ImportStep3_GenerateReport(ILogger<ImportStep3_GenerateReport> logger)
+public sealed class GenerateReport(ILogger<GenerateReport> logger)
 {
-    public Task ExecuteAsync(JobRun jobRun, ImportRunContext ctx, CancellationToken ct)
+    public Task ExecuteAsync(JobRun jobRun, SyncRunContext ctx, CancellationToken ct)
     {
         var duration = jobRun.FinishedAt.HasValue
             ? jobRun.FinishedAt.Value - jobRun.StartedAt
@@ -14,12 +14,16 @@ public sealed class ImportStep3_GenerateReport(ILogger<ImportStep3_GenerateRepor
         if (ctx.DryRun)
             Log.DryRunActive(logger);
 
-        Log.ImportCompleteHeader(logger);
+        Log.SyncCompleteHeader(logger);
         Log.SyncDuration(logger, duration.ToString(@"hh\:mm\:ss"));
         Log.SyncStatus(logger, jobRun.Status);
         Log.TracksAdded(logger, jobRun.TracksAdded);
+        Log.TracksRemoved(logger,
+            jobRun.TracksRemovedLiked + jobRun.TracksRemovedManual,
+            jobRun.TracksRemovedLiked,
+            jobRun.TracksRemovedManual);
         Log.TracksSkipped(logger, jobRun.TracksSkipped);
-        Log.TracksMapped(logger, jobRun.NewAlbumsEncountered);
+        Log.NewAlbumsSeen(logger, jobRun.NewAlbumsEncountered);
         Log.QueueSize(logger, jobRun.QueueSizeAfter);
 
         if (ctx.Limit.HasValue)

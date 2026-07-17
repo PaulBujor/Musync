@@ -213,7 +213,7 @@ Musync.slnx
 │   │   ├── Spotify/          # Spotify client, auth, token handler, models, SpotifySearchMapper
 │   │   ├── Tidal/            # Tidal client, auth, token handler, models (import source only)
 │   │   └── Persistence/      # EF Core AppDbContext
-│   ├── Jobs/                 # QueueAlbumsOrchestrator, ImportOrchestrator + numbered step classes
+│   ├── Jobs/                 # Sync/ + Import/ (orchestrator + step classes per flow); shared Log, CacheKeys, ReconcileQueueJob
 │   └── Migrations/           # EF Core migrations
 └── tests/Musync.Tests/
     ├── Fakes/                # LocalMockMusicProvider, LocalMockTrackMapper

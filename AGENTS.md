@@ -29,7 +29,8 @@ dotnet add src/Musync package System.CommandLine
 | Mode | Command |
 |------|---------|
 | Direct | `dotnet run --project src/Musync -- <command>` (e.g. `spotify queue-albums`) |
-| Docker | `docker compose up` (uses `compose.yaml`) |
+| Docker (Postgres only) | `docker compose up` — `compose.yaml` starts only Postgres; it does **not** build the app |
+| Docker (app + Postgres) | `docker compose -f compose.yaml -f compose.app.yaml up` (`compose.app.yaml` builds/runs the Musync image) |
 | Tests | `dotnet test` (mock provider, no credentials needed) |
 | Lint | `dotnet format --verify-no-changes` (CI gate; run `dotnet format` to fix) |
 
@@ -54,17 +55,17 @@ dotnet add src/Musync package System.CommandLine
 ## Key Patterns
 
 - **Provider selection (music)**: Providers are **keyed DI services** — `GetKeyedService<IMusicProvider>("spotify"|"tidal")` and `GetKeyedService<ITrackMapper>(...)`, resolved by name from the command, never injected directly. Tidal wiring is registered only when `Tidal:ApiBaseUrl` is set; targeting an unconfigured provider fails with exit code `1`. Mock provider lives in `tests/Fakes/` and is registered directly in test DI.
-- **Jobs**: An orchestrator (`QueueAlbumsOrchestrator` / `ImportOrchestrator`) runs numbered step classes in sequence, threading a `*RunContext` record that carries the resolved provider(s), playlist id, `dryRun`, and `limit`. Step classes are DI-scoped; the provider reaches them via the context, not DI.
+- **Jobs**: An orchestrator (`QueueAlbumsOrchestrator` / `ImportOrchestrator`) runs step classes in sequence, threading a `*RunContext` record that carries the resolved provider(s), playlist id, `dryRun`, and `limit`. Steps live in per-flow folders (`Jobs/Sync/`, `Jobs/Import/`); the orchestrator's call order — not a name prefix — defines execution order, and state flows step→step by return value. Orchestrators and step classes are DI-registered and DI-scoped; the provider reaches them via the context, not DI.
 - **Provider selection (database)**: `Database:Provider` config (`"Sqlite"` or `"Postgres"`). Default: SQLite. Docker overrides to PostgreSQL via environment variable.
-- **Auth**: PKCE OAuth with browser-based flow on first run; refresh token persisted to `AppSettings` table via `ISpotifyAuthenticator` / `SpotifyTokenHandler` (a `DelegatingHandler`)
+- **Auth**: PKCE OAuth with browser-based flow on first run; refresh token persisted (encrypted at rest) to the `RefreshTokens` table via `ISpotifyAuthenticator` / `SpotifyTokenHandler` (a `DelegatingHandler`)
 - **Token management**: `SpotifyTokenHandler` is a `DelegatingHandler` — NOT mixed into `SpotifyMusicProvider`. Token refresh serialised with `SemaphoreSlim(1,1)`. New refresh tokens written immediately to DB in a dedicated `DbContext` transaction.
 - **Pagination**: `IAsyncEnumerable<T>` on all paginated Spotify endpoints (lazy streaming, not full buffering)
 - **Parallelism**: `Parallel.ForEachAsync` with `MaxDegreeOfParallelism` (default: 3 concurrent) for album track-list fetches
-- **Caching**: `IHybridCache` (in-process only, no distributed backend; `AddHybridCache()` with no extras). Used for per-run `HashSet<string>` lookups (liked tracks, track history, queue contents).
+- **Caching**: `IHybridCache` (in-process only, no distributed backend; `AddHybridCache()` with no extras). Caches only the liked-tracks `HashSet<string>` per run (`CacheKeys.LikedTracks`); track history and current queue contents are read fresh from the DB / provider each time.
 - **Membership checks**: `HashSet<string>.Contains()` — never per-track SQLite or Spotify queries
 - **Resilience**: Polly via `AddStandardResilienceHandler()` with custom `Retry-After` header support
 - **Logging**: `[LoggerMessage]` source generators (no string interpolation). `JobRunId` pushed as a structured scope property.
-- **Options**: `services.Configure<T>().BindConfiguration("Section").ValidateDataAnnotations().ValidateOnStart()`. No `IConfiguration` injection below `Program.cs`.
+- **Options**: `services.AddOptions<T>().BindConfiguration("Section").ValidateDataAnnotations()`. Provider options are validated lazily (on first use in the run helpers), not at host build, so a command targeting one provider doesn't fail because another is unconfigured. No `IConfiguration` injection below `Program.cs`.
 - **EF Core**: SQLite + WAL mode (default) or PostgreSQL. Provider selected via `Database:Provider` config. SQLite uses `EnsureCreated()`; PostgreSQL uses `MigrateAsync()`. In tests, use real SQLite in-memory (not `UseInMemoryDatabase`).
 - **Cancellation**: Every `async` method accepts `CancellationToken`. `System.CommandLine` wires `Ctrl+C`/`SIGTERM` to the root token.
 
