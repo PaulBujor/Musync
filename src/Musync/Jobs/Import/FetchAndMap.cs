@@ -33,46 +33,26 @@ public sealed class FetchAndMap(
                 continue;
             }
 
-            var targetId = await ctx.Mapper.FindTargetTrackIdAsync(sourceTrack, ct);
+            var match = await ctx.Mapper.FindMatchAsync(sourceTrack, ct);
 
-            if (ctx.DryRun)
+            switch (match.Outcome)
             {
-                if (targetId is not null)
-                    candidates.Add((targetId, sourceTrack));
-                else
+                case TrackMatchOutcome.Matched:
+                    candidates.Add((match.TargetTrackId!, sourceTrack));
+                    if (!ctx.DryRun)
+                        db.TrackMappings.Add(NewMapping(ctx, sourceId, match.TargetTrackId!, sourceTrack.Isrc));
+                    break;
+
+                case TrackMatchOutcome.NotFound:
                     Log.TrackNotMapped(logger, sourceTrack.Name, sourceTrack.Artist);
-            }
-            else
-            {
-                if (targetId is not null)
-                {
-                    db.TrackMappings.Add(new TrackMapping
-                    {
-                        Id = Guid.CreateVersion7(),
-                        SourceProvider = ctx.SourceProviderName,
-                        SourceTrackId = sourceId,
-                        TargetProvider = ctx.TargetProviderName,
-                        TargetTrackId = targetId,
-                        Isrc = sourceTrack.Isrc ?? "",
-                        FirstMappedAt = DateTime.UtcNow
-                    });
-                    candidates.Add((targetId, sourceTrack));
-                }
-                else
-                {
-                    // Persist a negative mapping (empty target) so we don't re-search it next run.
-                    db.TrackMappings.Add(new TrackMapping
-                    {
-                        Id = Guid.CreateVersion7(),
-                        SourceProvider = ctx.SourceProviderName,
-                        SourceTrackId = sourceId,
-                        TargetProvider = ctx.TargetProviderName,
-                        TargetTrackId = "",
-                        Isrc = sourceTrack.Isrc ?? "",
-                        FirstMappedAt = DateTime.UtcNow
-                    });
-                    Log.TrackNotMapped(logger, sourceTrack.Name, sourceTrack.Artist);
-                }
+                    // Cache the negative (empty target) so we don't re-search it next run.
+                    if (!ctx.DryRun)
+                        db.TrackMappings.Add(NewMapping(ctx, sourceId, "", sourceTrack.Isrc));
+                    break;
+
+                default: // SearchFailed — transient, so don't cache; it retries on the next run.
+                    Log.TrackSearchDeferred(logger, sourceTrack.Name, sourceTrack.Artist);
+                    break;
             }
         }
 
@@ -86,4 +66,16 @@ public sealed class FetchAndMap(
 
         return candidates;
     }
+
+    private static TrackMapping NewMapping(ImportRunContext ctx, string sourceId, string targetId, string? isrc) =>
+        new()
+        {
+            Id = Guid.CreateVersion7(),
+            SourceProvider = ctx.SourceProviderName,
+            SourceTrackId = sourceId,
+            TargetProvider = ctx.TargetProviderName,
+            TargetTrackId = targetId,
+            Isrc = isrc ?? "",
+            FirstMappedAt = DateTime.UtcNow
+        };
 }

@@ -227,7 +227,7 @@ Console.CancelKeyPress += (_, e) =>
 var rootCommand = new RootCommand("Musync — multi-provider music queue manager");
 
 var dryRunOption = new Option<bool>("--dry-run")
-    { Recursive = true, Description = "Preview changes without mutating providers" };
+{ Recursive = true, Description = "Preview changes without mutating providers" };
 var limitOption = new Option<int?>("--limit") { Recursive = true, Description = "Maximum number of items to process" };
 rootCommand.Add(dryRunOption);
 rootCommand.Add(limitOption);
@@ -247,13 +247,13 @@ var tidalQueueAlbums = new Command("queue-albums", "Sync saved albums to the que
 tidalCmd.Add(tidalQueueAlbums);
 
 var spotifySourceOption = new Option<string>("--source") { Description = "Source provider to import from" }
-    .AcceptOnlyFromAmong(ProviderKeys.All);
+    .AcceptOnlyFromAmong([.. ProviderKeys.All]);
 var spotifyImport = new Command("import", "Import tracks from another provider");
 spotifyImport.Add(spotifySourceOption);
 spotifyCmd.Add(spotifyImport);
 
 var tidalSourceOption = new Option<string>("--source") { Description = "Source provider to import from" }
-    .AcceptOnlyFromAmong(ProviderKeys.All);
+    .AcceptOnlyFromAmong([.. ProviderKeys.All]);
 var tidalImport = new Command("import", "Import tracks from another provider");
 tidalImport.Add(tidalSourceOption);
 tidalCmd.Add(tidalImport);

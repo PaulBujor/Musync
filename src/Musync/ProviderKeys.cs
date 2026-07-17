@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Musync;
 
 /// <summary>
@@ -9,5 +11,5 @@ public static class ProviderKeys
     public const string Spotify = "spotify";
     public const string Tidal = "tidal";
 
-    public static readonly string[] All = [Spotify, Tidal];
+    public static readonly ImmutableArray<string> All = [Spotify, Tidal];
 }

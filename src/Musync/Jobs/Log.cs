@@ -73,6 +73,10 @@ public static partial class Log
         Message = "Could not find target match for source track \"{TrackName}\" by {ArtistName}")]
     public static partial void TrackNotMapped(ILogger logger, string trackName, string artistName);
 
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Search failed for source track \"{TrackName}\" by {ArtistName}; will retry next run")]
+    public static partial void TrackSearchDeferred(ILogger logger, string trackName, string artistName);
+
     [LoggerMessage(Level = LogLevel.Information, Message = "No mapped tracks to import")]
     public static partial void NoMappedTracksToImport(ILogger logger);
 

@@ -32,9 +32,7 @@ public sealed class SpotifySearchMapperTests
     }
 
     private static bool IsIsrcQuery(HttpRequestMessage request)
-    {
-        return request.RequestUri!.Query.Contains("isrc", StringComparison.OrdinalIgnoreCase);
-    }
+        => request.RequestUri!.Query.Contains("isrc", StringComparison.OrdinalIgnoreCase);
 
     [Fact]
     public async Task IsrcMatch_ReturnsAuthoritativeHit()
@@ -44,10 +42,11 @@ public sealed class SpotifySearchMapperTests
                 ? TracksResponse(("spotify-isrc", "USRC10000001"))
                 : throw new InvalidOperationException("fallback should not run when the isrc search hits"));
 
-        var result = await mapper.FindTargetTrackIdAsync(
+        var result = await mapper.FindMatchAsync(
             new Track("src", "Song", "Artist", "Album", "USRC10000001"), CancellationToken.None);
 
-        Assert.Equal("spotify-isrc", result);
+        Assert.Equal(TrackMatchOutcome.Matched, result.Outcome);
+        Assert.Equal("spotify-isrc", result.TargetTrackId);
     }
 
     [Fact]
@@ -55,10 +54,11 @@ public sealed class SpotifySearchMapperTests
     {
         var mapper = CreateMapper(_ => TracksResponse(("top", "USRCZZ"), ("second", "USRCYY")));
 
-        var result = await mapper.FindTargetTrackIdAsync(
+        var result = await mapper.FindMatchAsync(
             new Track("src", "Song", "Artist", "Album"), CancellationToken.None);
 
-        Assert.Equal("top", result);
+        Assert.Equal(TrackMatchOutcome.Matched, result.Outcome);
+        Assert.Equal("top", result.TargetTrackId);
     }
 
     [Fact]
@@ -67,25 +67,39 @@ public sealed class SpotifySearchMapperTests
         var mapper = CreateMapper(request =>
             IsIsrcQuery(request)
                 ? TracksResponse() // isrc: search finds nothing
-                : TracksResponse(("wrong", "USRCOTHER"), ("right", "USRC10000001")));
+                : TracksResponse(("wrong", "USRCOTHER"), ("right", "usrc10000001"))); // lowercase → still matches
 
-        var result = await mapper.FindTargetTrackIdAsync(
+        var result = await mapper.FindMatchAsync(
             new Track("src", "Song", "Artist", "Album", "USRC10000001"), CancellationToken.None);
 
-        Assert.Equal("right", result);
+        Assert.Equal(TrackMatchOutcome.Matched, result.Outcome);
+        Assert.Equal("right", result.TargetTrackId);
     }
 
     [Fact]
-    public async Task Fallback_IsrcOnSource_NoCandidateMatches_ReturnsNull()
+    public async Task Fallback_IsrcOnSource_NoCandidateMatches_ReturnsNotFound()
     {
         var mapper = CreateMapper(request =>
             IsIsrcQuery(request)
                 ? TracksResponse()
                 : TracksResponse(("wrong-1", "USRCAAA"), ("wrong-2", "USRCBBB")));
 
-        var result = await mapper.FindTargetTrackIdAsync(
+        var result = await mapper.FindMatchAsync(
             new Track("src", "Song", "Artist", "Album", "USRC10000001"), CancellationToken.None);
 
-        Assert.Null(result);
+        Assert.Equal(TrackMatchOutcome.NotFound, result.Outcome);
+        Assert.Null(result.TargetTrackId);
+    }
+
+    [Fact]
+    public async Task SearchRequestFails_ReturnsSearchFailed_NotNotFound()
+    {
+        var mapper = CreateMapper(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+
+        var result = await mapper.FindMatchAsync(
+            new Track("src", "Song", "Artist", "Album", "USRC10000001"), CancellationToken.None);
+
+        // A transient failure must NOT be reported as a genuine no-match (which would be cached).
+        Assert.Equal(TrackMatchOutcome.SearchFailed, result.Outcome);
     }
 }

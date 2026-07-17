@@ -259,6 +259,31 @@ public sealed class ImportOrchestratorTests
     }
 
     [Fact]
+    public async Task RunAsync_SearchFailure_IsNotCachedAsNegative()
+    {
+        var tidalTracks = new List<Track>
+        {
+            new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
+            new("tidal-flaky", "Flaky Track", "Artist F", "Album F", "USRCFLAKY01"),
+        };
+
+        var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
+        var target = new LocalMockMusicProvider();
+        var mapper = new LocalMockTrackMapper(searchFailures: ["tidal-flaky"]);
+
+        var sp = await RunAsync(source, target, mapper);
+        var db = sp.GetRequiredService<AppDbContext>();
+
+        // The hit is cached; the transient search failure is NOT persisted, so it retries next run.
+        var mappings = await db.TrackMappings.ToListAsync();
+        Assert.Single(mappings);
+        Assert.Contains(mappings, m => m.SourceTrackId == "tidal-1" && m.TargetTrackId == "spotify-track-1");
+        Assert.DoesNotContain(mappings, m => m.SourceTrackId == "tidal-flaky");
+
+        Assert.Single(target.PlaylistTracks);
+    }
+
+    [Fact]
     public async Task RunAsync_CachedMapping_DoesNotRequeryMapper()
     {
         var tidalTracks = new List<Track>

@@ -3,7 +3,9 @@ using Musync.Domain.Interfaces;
 
 namespace Musync.Tests.Fakes;
 
-public sealed class LocalMockTrackMapper(Dictionary<string, string>? mapping = null) : ITrackMapper
+public sealed class LocalMockTrackMapper(
+    Dictionary<string, string>? mapping = null,
+    HashSet<string>? searchFailures = null) : ITrackMapper
 {
     private readonly Dictionary<string, string> _mapping = mapping ?? new Dictionary<string, string>
     {
@@ -11,12 +13,19 @@ public sealed class LocalMockTrackMapper(Dictionary<string, string>? mapping = n
         { "tidal-2", "spotify-track-2" }
     };
 
+    private readonly HashSet<string> _searchFailures = searchFailures ?? [];
+
     public int CallCount { get; private set; }
 
-    public Task<string?> FindTargetTrackIdAsync(Track track, CancellationToken ct)
+    public Task<TrackMatch> FindMatchAsync(Track track, CancellationToken ct)
     {
         CallCount++;
-        var found = _mapping.TryGetValue(track.Id, out var spotifyId);
-        return Task.FromResult(found ? spotifyId : null);
+
+        if (_searchFailures.Contains(track.Id))
+            return Task.FromResult(TrackMatch.SearchFailed);
+
+        return Task.FromResult(_mapping.TryGetValue(track.Id, out var spotifyId)
+            ? TrackMatch.Found(spotifyId)
+            : TrackMatch.NotFound);
     }
 }
