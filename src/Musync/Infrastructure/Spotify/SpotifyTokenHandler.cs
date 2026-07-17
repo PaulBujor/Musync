@@ -17,7 +17,7 @@ public sealed class SpotifyTokenHandler(
     private const string TokenUrlConst = "https://accounts.spotify.com/api/token";
     private readonly SpotifyOptions _options = options.Value;
 
-    protected override string ProviderName => "spotify";
+    protected override string ProviderName => ProviderKeys.Spotify;
 
     // Musync authenticates as a PKCE public client, so refresh sends client_id in the body
     // rather than an HTTP Basic secret. See Spotify's "Refreshing tokens" guide.

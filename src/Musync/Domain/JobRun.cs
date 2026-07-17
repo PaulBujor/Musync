@@ -5,20 +5,18 @@ namespace Musync.Domain;
 
 public sealed class JobRun
 {
-    [Key, DatabaseGenerated(DatabaseGeneratedOption.None)]
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.None)]
     public Guid Id { get; set; }
 
     public DateTime StartedAt { get; set; }
     public DateTime? FinishedAt { get; set; }
 
-    [MaxLength(50)]
-    public string Status { get; set; } = "running";
+    [MaxLength(50)] public string Status { get; set; } = JobStatus.Running;
 
-    [MaxLength(50)]
-    public string? ProviderName { get; set; }
+    [MaxLength(50)] public string? ProviderName { get; set; }
 
-    [MaxLength(50)]
-    public string? Command { get; set; }
+    [MaxLength(50)] public string? Command { get; set; }
 
     public bool DryRun { get; set; }
 
@@ -29,8 +27,11 @@ public sealed class JobRun
     public int TracksRemovedManual { get; set; }
     public int TracksSkipped { get; set; }
     public int NewAlbumsEncountered { get; set; }
+
+    /// <summary>Tracks matched to a target-provider id during import (queue-albums leaves this 0).</summary>
+    public int TracksMapped { get; set; }
+
     public int QueueSizeAfter { get; set; }
 
-    [MaxLength(2000)]
-    public string? ErrorMessage { get; set; }
+    [MaxLength(2000)] public string? ErrorMessage { get; set; }
 }

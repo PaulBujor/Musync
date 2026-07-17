@@ -5,8 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Musync.Domain;
 using Musync.Domain.Interfaces;
 using Musync.Infrastructure.Persistence;
-using Musync.Jobs;
-using Musync.Options;
+using Musync.Jobs.Import;
 using Musync.Tests.Fakes;
 
 namespace Musync.Tests.Jobs;
@@ -23,13 +22,13 @@ public sealed class ImportOrchestratorTests
         services.AddHybridCache();
 
         services.AddSingleton<ILogger<ImportOrchestrator>>(NullLogger<ImportOrchestrator>.Instance);
-        services.AddSingleton<ILogger<ImportStep1_FetchAndMap>>(NullLogger<ImportStep1_FetchAndMap>.Instance);
-        services.AddSingleton<ILogger<ImportStep2_AddToQueue>>(NullLogger<ImportStep2_AddToQueue>.Instance);
-        services.AddSingleton<ILogger<ImportStep3_GenerateReport>>(NullLogger<ImportStep3_GenerateReport>.Instance);
+        services.AddSingleton<ILogger<FetchAndMap>>(NullLogger<FetchAndMap>.Instance);
+        services.AddSingleton<ILogger<AddToQueue>>(NullLogger<AddToQueue>.Instance);
+        services.AddSingleton<ILogger<GenerateReport>>(NullLogger<GenerateReport>.Instance);
 
-        services.AddSingleton<ImportStep1_FetchAndMap>();
-        services.AddSingleton<ImportStep2_AddToQueue>();
-        services.AddSingleton<ImportStep3_GenerateReport>();
+        services.AddSingleton<FetchAndMap>();
+        services.AddSingleton<AddToQueue>();
+        services.AddSingleton<GenerateReport>();
 
         var sp = services.BuildServiceProvider();
 
@@ -54,20 +53,20 @@ public sealed class ImportOrchestratorTests
     {
         var sp = BuildTestServices();
         var db = sp.GetRequiredService<AppDbContext>();
-        var step1 = sp.GetRequiredService<ImportStep1_FetchAndMap>();
-        var step2 = sp.GetRequiredService<ImportStep2_AddToQueue>();
-        var step3 = sp.GetRequiredService<ImportStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<FetchAndMap>();
+        var step2 = sp.GetRequiredService<AddToQueue>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<ImportOrchestrator>.Instance;
 
         var ctx = new ImportRunContext(
-            SourceProviderName: "tidal",
-            TargetProviderName: "spotify",
-            Source: sourceProvider,
-            Target: targetProvider,
-            Mapper: mapper,
-            PlaylistId: "test-playlist",
-            DryRun: dryRun,
-            Limit: limit);
+            "tidal",
+            "spotify",
+            sourceProvider,
+            targetProvider,
+            mapper,
+            "test-playlist",
+            dryRun,
+            limit);
 
         var orchestrator = new ImportOrchestrator(db, step1, step2, step3, logger);
         await orchestrator.RunAsync(ctx, CancellationToken.None);
@@ -97,7 +96,7 @@ public sealed class ImportOrchestratorTests
         var tidalTracks = new List<Track>
         {
             new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
-            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002"),
+            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002")
         };
 
         var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
@@ -131,7 +130,7 @@ public sealed class ImportOrchestratorTests
         var tidalTracks = new List<Track>
         {
             new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
-            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002"),
+            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002")
         };
 
         var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
@@ -151,20 +150,20 @@ public sealed class ImportOrchestratorTests
         });
         await db.SaveChangesAsync();
 
-        var step1 = sp.GetRequiredService<ImportStep1_FetchAndMap>();
-        var step2 = sp.GetRequiredService<ImportStep2_AddToQueue>();
-        var step3 = sp.GetRequiredService<ImportStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<FetchAndMap>();
+        var step2 = sp.GetRequiredService<AddToQueue>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<ImportOrchestrator>.Instance;
 
         var ctx = new ImportRunContext(
-            SourceProviderName: "tidal",
-            TargetProviderName: "spotify",
-            Source: source,
-            Target: target,
-            Mapper: mapper,
-            PlaylistId: "test-playlist",
-            DryRun: false,
-            Limit: null);
+            "tidal",
+            "spotify",
+            source,
+            target,
+            mapper,
+            "test-playlist",
+            false,
+            null);
 
         var orchestrator = new ImportOrchestrator(db, step1, step2, step3, logger);
         await orchestrator.RunAsync(ctx, CancellationToken.None);
@@ -185,7 +184,7 @@ public sealed class ImportOrchestratorTests
         var tidalTracks = new List<Track>
         {
             new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
-            new("tidal-unknown", "Unknown Track", "Unknown Artist", "Album U", "USRC99999999"),
+            new("tidal-unknown", "Unknown Track", "Unknown Artist", "Album U", "USRC99999999")
         };
 
         var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
@@ -198,9 +197,12 @@ public sealed class ImportOrchestratorTests
         Assert.Single(target.PlaylistTracks);
         Assert.Contains(target.PlaylistTracks, t => t.Id == "spotify-track-1");
 
+        // The hit is cached, and the miss is cached as a negative (empty target) so it isn't
+        // re-searched on the next run.
         var mappings = await db.TrackMappings.ToListAsync();
-        Assert.Single(mappings);
+        Assert.Equal(2, mappings.Count);
         Assert.Contains(mappings, m => m.SourceTrackId == "tidal-1" && m.TargetTrackId == "spotify-track-1");
+        Assert.Contains(mappings, m => m.SourceTrackId == "tidal-unknown" && m.TargetTrackId == "");
 
         var latest = await GetLatestJobRunAsync(db);
         Assert.NotNull(latest);
@@ -208,11 +210,85 @@ public sealed class ImportOrchestratorTests
     }
 
     [Fact]
-    public async Task RunAsync_CachedMapping_DoesNotRequeryMapper()
+    public async Task RunAsync_NegativeMappingCached_DoesNotRequeryMapper()
+    {
+        var tidalTracks = new List<Track>
+        {
+            new("tidal-unknown", "Unknown Track", "Unknown Artist", "Album U", "USRC99999999")
+        };
+
+        var sp = BuildTestServices();
+        var db = sp.GetRequiredService<AppDbContext>();
+        db.TrackMappings.Add(new TrackMapping
+        {
+            Id = Guid.CreateVersion7(),
+            SourceProvider = "tidal",
+            SourceTrackId = "tidal-unknown",
+            TargetProvider = "spotify",
+            TargetTrackId = "",
+            Isrc = "USRC99999999",
+            FirstMappedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
+        var target = new LocalMockMusicProvider();
+        var mapper = new LocalMockTrackMapper();
+
+        var step1 = sp.GetRequiredService<FetchAndMap>();
+        var step2 = sp.GetRequiredService<AddToQueue>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
+        var logger = NullLogger<ImportOrchestrator>.Instance;
+
+        var ctx = new ImportRunContext(
+            "tidal",
+            "spotify",
+            source,
+            target,
+            mapper,
+            "test-playlist",
+            false,
+            null);
+
+        var orchestrator = new ImportOrchestrator(db, step1, step2, step3, logger);
+        await orchestrator.RunAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(0, mapper.CallCount);
+        Assert.Empty(target.PlaylistTracks);
+        Assert.Single(await db.TrackMappings.ToListAsync());
+    }
+
+    [Fact]
+    public async Task RunAsync_SearchFailure_IsNotCachedAsNegative()
     {
         var tidalTracks = new List<Track>
         {
             new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
+            new("tidal-flaky", "Flaky Track", "Artist F", "Album F", "USRCFLAKY01"),
+        };
+
+        var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
+        var target = new LocalMockMusicProvider();
+        var mapper = new LocalMockTrackMapper(searchFailures: ["tidal-flaky"]);
+
+        var sp = await RunAsync(source, target, mapper);
+        var db = sp.GetRequiredService<AppDbContext>();
+
+        // The hit is cached; the transient search failure is NOT persisted, so it retries next run.
+        var mappings = await db.TrackMappings.ToListAsync();
+        Assert.Single(mappings);
+        Assert.Contains(mappings, m => m.SourceTrackId == "tidal-1" && m.TargetTrackId == "spotify-track-1");
+        Assert.DoesNotContain(mappings, m => m.SourceTrackId == "tidal-flaky");
+
+        Assert.Single(target.PlaylistTracks);
+    }
+
+    [Fact]
+    public async Task RunAsync_CachedMapping_DoesNotRequeryMapper()
+    {
+        var tidalTracks = new List<Track>
+        {
+            new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001")
         };
 
         var sp = BuildTestServices();
@@ -233,20 +309,20 @@ public sealed class ImportOrchestratorTests
         var target = new LocalMockMusicProvider();
         var mapper = new LocalMockTrackMapper();
 
-        var step1 = sp.GetRequiredService<ImportStep1_FetchAndMap>();
-        var step2 = sp.GetRequiredService<ImportStep2_AddToQueue>();
-        var step3 = sp.GetRequiredService<ImportStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<FetchAndMap>();
+        var step2 = sp.GetRequiredService<AddToQueue>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<ImportOrchestrator>.Instance;
 
         var ctx = new ImportRunContext(
-            SourceProviderName: "tidal",
-            TargetProviderName: "spotify",
-            Source: source,
-            Target: target,
-            Mapper: mapper,
-            PlaylistId: "test-playlist",
-            DryRun: false,
-            Limit: null);
+            "tidal",
+            "spotify",
+            source,
+            target,
+            mapper,
+            "test-playlist",
+            false,
+            null);
 
         var orchestrator = new ImportOrchestrator(db, step1, step2, step3, logger);
         await orchestrator.RunAsync(ctx, CancellationToken.None);
@@ -267,12 +343,12 @@ public sealed class ImportOrchestratorTests
         var tidalTracks = new List<Track>
         {
             new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
-            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002"),
+            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002")
         };
 
         var spotifyLiked = new List<Track>
         {
-            new("spotify-track-1", "Track One", "Artist A", "Album A", "USRC10000001"),
+            new("spotify-track-1", "Track One", "Artist A", "Album A", "USRC10000001")
         };
 
         var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
@@ -297,14 +373,14 @@ public sealed class ImportOrchestratorTests
     {
         var tidalTracks = new List<Track>
         {
-            new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
+            new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001")
         };
 
         var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
         var target = new LocalMockMusicProvider();
         var mapper = new LocalMockTrackMapper();
 
-        var sp = await RunAsync(source, target, mapper, dryRun: true);
+        var sp = await RunAsync(source, target, mapper, true);
         var db = sp.GetRequiredService<AppDbContext>();
 
         Assert.Empty(target.PlaylistTracks);
@@ -323,7 +399,7 @@ public sealed class ImportOrchestratorTests
         {
             new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
             new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002"),
-            new("tidal-3", "Track Three", "Artist C", "Album C", "USRC10000003"),
+            new("tidal-3", "Track Three", "Artist C", "Album C", "USRC10000003")
         };
 
         var source = new LocalMockMusicProvider(savedTracks: tidalTracks);
@@ -347,7 +423,7 @@ public sealed class ImportOrchestratorTests
         var tidalTracks = new List<Track>
         {
             new("tidal-1", "Track One", "Artist A", "Album A", "USRC10000001"),
-            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002"),
+            new("tidal-2", "Track Two", "Artist B", "Album B", "USRC10000002")
         };
 
         var source = new LocalMockMusicProvider(savedTracks: tidalTracks);

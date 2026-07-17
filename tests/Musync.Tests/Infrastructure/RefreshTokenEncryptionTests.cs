@@ -1,3 +1,4 @@
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Musync.Domain;
@@ -68,7 +69,7 @@ public sealed class RefreshTokenEncryptionTests
         Assert.Equal(Plaintext, token.Token);
     }
 
-    private static void AddParam(System.Data.Common.DbCommand cmd, string name, string value)
+    private static void AddParam(DbCommand cmd, string name, string value)
     {
         var p = cmd.CreateParameter();
         p.ParameterName = name;

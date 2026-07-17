@@ -15,6 +15,9 @@ public abstract class TokenHandlerBase(
     ILogger logger,
     IAuthenticator authenticator) : DelegatingHandler
 {
+    // Refresh this many seconds before the token's stated expiry to absorb clock skew / latency.
+    private const int ExpirySkewSeconds = 60;
+
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
     private string? _accessToken;
@@ -169,7 +172,7 @@ public abstract class TokenHandlerBase(
         var root = refreshDoc.RootElement;
         _accessToken = root.GetProperty("access_token").GetString()!;
         var expiresIn = root.GetProperty("expires_in").GetInt32();
-        _tokenExpiry = DateTime.UtcNow.AddSeconds(expiresIn - 60);
+        _tokenExpiry = DateTime.UtcNow.AddSeconds(expiresIn - ExpirySkewSeconds);
 
         if (root.TryGetProperty("refresh_token", out var newRefreshToken))
         {
@@ -195,6 +198,7 @@ public abstract class TokenHandlerBase(
                 existing.Token = newToken;
                 existing.UpdatedAt = DateTime.UtcNow;
             }
+
             await db.SaveChangesAsync(ct);
         }
 

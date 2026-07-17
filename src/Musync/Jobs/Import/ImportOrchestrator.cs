@@ -2,13 +2,13 @@ using Microsoft.Extensions.Logging;
 using Musync.Domain;
 using Musync.Infrastructure.Persistence;
 
-namespace Musync.Jobs;
+namespace Musync.Jobs.Import;
 
 public sealed class ImportOrchestrator(
     AppDbContext db,
-    ImportStep1_FetchAndMap step1,
-    ImportStep2_AddToQueue step2,
-    ImportStep3_GenerateReport step3,
+    FetchAndMap step1,
+    AddToQueue step2,
+    GenerateReport step3,
     ILogger<ImportOrchestrator> logger)
 {
     public async Task RunAsync(ImportRunContext ctx, CancellationToken ct)
@@ -17,7 +17,7 @@ public sealed class ImportOrchestrator(
         {
             Id = Guid.CreateVersion7(),
             StartedAt = DateTime.UtcNow,
-            Status = "running",
+            Status = JobStatus.Running,
             ProviderName = ctx.TargetProviderName,
             Command = $"import --source {ctx.SourceProviderName}",
             DryRun = ctx.DryRun,
@@ -31,7 +31,8 @@ public sealed class ImportOrchestrator(
         }
 
         using var _ = logger.BeginScope(new { JobRunId = jobRun.Id.ToString() });
-        Log.StartingJob(logger, $"import --source {ctx.SourceProviderName}", ctx.TargetProviderName, jobRun.Id.ToString());
+        Log.StartingJob(logger, $"import --source {ctx.SourceProviderName}", ctx.TargetProviderName,
+            jobRun.Id.ToString());
 
         async Task FinalizeAsync(string status, CancellationToken token, string? errorMessage = null)
         {
@@ -51,17 +52,17 @@ public sealed class ImportOrchestrator(
             var candidates = await step1.ExecuteAsync(jobRun, ctx, ct);
             await step2.ExecuteAsync(jobRun, ctx, candidates, ct);
 
-            await FinalizeAsync(ctx.DryRun ? "dry-run" : "succeeded", ct);
+            await FinalizeAsync(ctx.DryRun ? JobStatus.DryRun : JobStatus.Succeeded, ct);
         }
         catch (OperationCanceledException)
         {
-            await FinalizeAsync("partial", CancellationToken.None, "Cancelled by user");
+            await FinalizeAsync(JobStatus.Partial, CancellationToken.None, "Cancelled by user");
             throw;
         }
         catch (Exception ex)
         {
             Log.JobFailed(logger, ex.Message, ex);
-            await FinalizeAsync("failed", CancellationToken.None, ex.Message);
+            await FinalizeAsync(JobStatus.Failed, CancellationToken.None, ex.Message);
             throw;
         }
     }

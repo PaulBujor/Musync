@@ -33,27 +33,6 @@ public sealed class TokenHandlerTests : IDisposable
         _db.Dispose();
     }
 
-    private sealed class TestScopeFactory(AppDbContext db) : IServiceScopeFactory
-    {
-        public IServiceScope CreateScope() => new TestScope(db);
-
-        private sealed class TestScope(AppDbContext db) : IServiceScope
-        {
-            public IServiceProvider ServiceProvider => new TestServiceProvider(db);
-            public void Dispose() { }
-        }
-
-        private sealed class TestServiceProvider(AppDbContext db) : IServiceProvider
-        {
-            public object? GetService(Type serviceType)
-            {
-                if (serviceType == typeof(AppDbContext))
-                    return db;
-                return null;
-            }
-        }
-    }
-
     [Fact]
     public async Task SendAsync_InvalidGrantResponse_DeletesExpiredTokenAndReauthenticates()
     {
@@ -78,7 +57,6 @@ public sealed class TokenHandlerTests : IDisposable
             {
                 refreshAttempts++;
                 if (refreshAttempts == 1)
-                {
                     return new HttpResponseMessage(HttpStatusCode.BadRequest)
                     {
                         Content = new StringContent(
@@ -86,7 +64,6 @@ public sealed class TokenHandlerTests : IDisposable
                             Encoding.UTF8,
                             "application/json")
                     };
-                }
 
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
@@ -132,7 +109,6 @@ public sealed class TokenHandlerTests : IDisposable
         tokenHandler.InnerHandler = new MockHttpMessageHandler(request =>
         {
             if (request.RequestUri?.AbsoluteUri == "https://example.com/token")
-            {
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
@@ -140,7 +116,6 @@ public sealed class TokenHandlerTests : IDisposable
                         Encoding.UTF8,
                         "application/json")
                 };
-            }
 
             Assert.Equal("Bearer valid-access-token", request.Headers.Authorization?.ToString());
 
@@ -179,7 +154,6 @@ public sealed class TokenHandlerTests : IDisposable
         tokenHandler.InnerHandler = new MockHttpMessageHandler(request =>
         {
             if (request.RequestUri?.AbsoluteUri == "https://example.com/token")
-            {
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(
@@ -187,7 +161,6 @@ public sealed class TokenHandlerTests : IDisposable
                         Encoding.UTF8,
                         "application/json")
                 };
-            }
 
             apiCalls++;
             observedBodies.Add(request.Content is null
@@ -250,5 +223,32 @@ public sealed class TokenHandlerTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(1, authenticator.CallCount);
         Assert.Contains(_db.RefreshTokens, t => t.Token == "fresh-refresh-token");
+    }
+
+    private sealed class TestScopeFactory(AppDbContext db) : IServiceScopeFactory
+    {
+        public IServiceScope CreateScope()
+        {
+            return new TestScope(db);
+        }
+
+        private sealed class TestScope(AppDbContext db) : IServiceScope
+        {
+            public IServiceProvider ServiceProvider => new TestServiceProvider(db);
+
+            public void Dispose()
+            {
+            }
+        }
+
+        private sealed class TestServiceProvider(AppDbContext db) : IServiceProvider
+        {
+            public object? GetService(Type serviceType)
+            {
+                if (serviceType == typeof(AppDbContext))
+                    return db;
+                return null;
+            }
+        }
     }
 }

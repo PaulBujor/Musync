@@ -2,26 +2,20 @@ using System.Text.Json.Serialization;
 
 namespace Musync.Infrastructure.Spotify.Models;
 
-public class SpotifyTrackDto
+public sealed class SpotifyTrackDto
 {
-    [JsonPropertyName("id")]
-    public string Id { get; set; } = "";
+    [JsonPropertyName("id")] public string Id { get; init; } = "";
 
-    [JsonPropertyName("name")]
-    public string Name { get; set; } = "";
+    [JsonPropertyName("name")] public string Name { get; init; } = "";
 
-    [JsonPropertyName("artists")]
-    public List<ArtistDto> Artists { get; set; } = [];
+    [JsonPropertyName("artists")] public List<ArtistDto> Artists { get; init; } = [];
 
-    [JsonPropertyName("album")]
-    public AlbumDto? Album { get; set; }
+    [JsonPropertyName("album")] public AlbumDto? Album { get; init; }
 
-    [JsonPropertyName("external_ids")]
-    public ExternalIdsDto? ExternalIds { get; set; }
+    [JsonPropertyName("external_ids")] public ExternalIdsDto? ExternalIds { get; init; }
 }
 
-public class ExternalIdsDto
+public sealed class ExternalIdsDto
 {
-    [JsonPropertyName("isrc")]
-    public string? Isrc { get; set; }
+    [JsonPropertyName("isrc")] public string? Isrc { get; init; }
 }

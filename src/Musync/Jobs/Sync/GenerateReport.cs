@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Logging;
 using Musync.Domain;
 
-namespace Musync.Jobs;
+namespace Musync.Jobs.Sync;
 
-public sealed class SyncStep3_GenerateReport(ILogger<SyncStep3_GenerateReport> logger)
+public sealed class GenerateReport(ILogger<GenerateReport> logger)
 {
     public Task ExecuteAsync(JobRun jobRun, SyncRunContext ctx, CancellationToken ct)
     {

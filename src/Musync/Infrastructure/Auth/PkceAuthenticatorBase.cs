@@ -43,12 +43,12 @@ public abstract class PkceAuthenticatorBase(
         listener.Start();
 
         var authUrl = $"{AuthUrl}?client_id={ClientId}" +
-                       $"&response_type=code" +
-                       $"&redirect_uri={Uri.EscapeDataString(RedirectUri)}" +
-                       $"&scope={Uri.EscapeDataString(Scope)}" +
-                       $"&state={state}" +
-                       $"&code_challenge_method=S256" +
-                       $"&code_challenge={codeChallenge}";
+                      $"&response_type=code" +
+                      $"&redirect_uri={Uri.EscapeDataString(RedirectUri)}" +
+                      $"&scope={Uri.EscapeDataString(Scope)}" +
+                      $"&state={state}" +
+                      $"&code_challenge_method=S256" +
+                      $"&code_challenge={codeChallenge}";
 
         logger.LogInformation("Opening browser for {Provider} authorization...", ProviderName);
         Process.Start(new ProcessStartInfo
@@ -91,7 +91,8 @@ public abstract class PkceAuthenticatorBase(
         var response = await httpClient.PostAsync(TokenUrl, content, ct);
         response.EnsureSuccessStatusCode();
 
-        using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        using var doc =
+            await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
         var refreshToken = doc.RootElement.GetProperty("refresh_token").GetString()!;
 
         db.RefreshTokens.Add(new RefreshToken

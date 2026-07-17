@@ -4,14 +4,14 @@ using Microsoft.Extensions.Logging;
 using Musync.Domain;
 using Musync.Infrastructure.Persistence;
 
-namespace Musync.Jobs;
+namespace Musync.Jobs.Sync;
 
-public sealed class SyncStep2_AddNewTracks(
+public sealed class AddNewTracks(
     AppDbContext db,
     HybridCache cache,
-    ILogger<SyncStep2_AddNewTracks> logger)
+    ILogger<AddNewTracks> logger)
 {
-    public async Task ExecuteAsync(JobRun jobRun, SyncRunContext ctx, CancellationToken ct)
+    public async Task ExecuteAsync(JobRun jobRun, SyncRunContext ctx, SnapshotResult snapshot, CancellationToken ct)
     {
         Log.Step2Start(logger);
 
@@ -74,6 +74,7 @@ public sealed class SyncStep2_AddNewTracks(
                             updatedProcessedAlbums.Add(existing);
                         }
                     }
+
                     return;
                 }
 
@@ -84,11 +85,12 @@ public sealed class SyncStep2_AddNewTracks(
                 {
                     if (likedTrackIds.Contains(track.Id)
                         || historyTrackIds.Contains(track.Id)
-                        || ctx.CurrentPlaylistTrackIds.Contains(track.Id))
+                        || snapshot.CurrentPlaylistTrackIds.Contains(track.Id))
                     {
                         Interlocked.Increment(ref tracksSkipped);
                         continue;
                     }
+
                     albumTracks.Add(track);
                 }
 
@@ -118,10 +120,7 @@ public sealed class SyncStep2_AddNewTracks(
 
         jobRun.TracksSkipped = tracksSkipped;
 
-        if (ctx.Limit.HasValue && limitHit)
-        {
-            Log.LimitReached(logger, ctx.Limit.Value);
-        }
+        if (ctx.Limit.HasValue && limitHit) Log.LimitReached(logger, ctx.Limit.Value);
 
         // A track can appear on more than one saved album; keep a single copy per id.
         newTracks = newTracks
@@ -180,6 +179,6 @@ public sealed class SyncStep2_AddNewTracks(
             Log.DryRunWouldSaveAlbums(logger, newlyProcessedAlbums.Count);
         }
 
-        jobRun.QueueSizeAfter = ctx.QueueSizeAfterStep1 + newTracks.Count;
+        jobRun.QueueSizeAfter = snapshot.QueueSizeAfterRemovals + newTracks.Count;
     }
 }

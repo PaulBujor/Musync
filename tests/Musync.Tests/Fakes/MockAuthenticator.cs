@@ -1,3 +1,4 @@
+using Musync.Domain;
 using Musync.Domain.Interfaces;
 using Musync.Infrastructure.Persistence;
 
@@ -10,7 +11,7 @@ public sealed class MockAuthenticator(AppDbContext db) : IAuthenticator
     public async Task EnsureAuthenticatedAsync(CancellationToken ct)
     {
         CallCount++;
-        db.RefreshTokens.Add(new Musync.Domain.RefreshToken
+        db.RefreshTokens.Add(new RefreshToken
         {
             Id = Guid.CreateVersion7(),
             Token = "fresh-refresh-token",

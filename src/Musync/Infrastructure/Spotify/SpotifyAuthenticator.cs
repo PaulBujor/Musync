@@ -18,7 +18,7 @@ public sealed class SpotifyAuthenticator(
 
     protected override string AuthUrl => _options.AuthUrl;
     protected override string TokenUrl => _options.TokenUrl;
-    protected override string ProviderName => "spotify";
+    protected override string ProviderName => ProviderKeys.Spotify;
     protected override string Scope => _options.Scopes;
     protected override string ClientId => _options.ClientId;
     protected override string RedirectUri => _options.RedirectUri;

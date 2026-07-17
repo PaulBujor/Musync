@@ -2,13 +2,13 @@ using Microsoft.Extensions.Logging;
 using Musync.Domain;
 using Musync.Infrastructure.Persistence;
 
-namespace Musync.Jobs;
+namespace Musync.Jobs.Sync;
 
 public sealed class QueueAlbumsOrchestrator(
     AppDbContext db,
-    SyncStep1_SnapshotAndDiff step1,
-    SyncStep2_AddNewTracks step2,
-    SyncStep3_GenerateReport step3,
+    SnapshotAndDiff step1,
+    AddNewTracks step2,
+    GenerateReport step3,
     ILogger<QueueAlbumsOrchestrator> logger)
 {
     public async Task RunAsync(SyncRunContext ctx, CancellationToken ct)
@@ -17,7 +17,7 @@ public sealed class QueueAlbumsOrchestrator(
         {
             Id = Guid.CreateVersion7(),
             StartedAt = DateTime.UtcNow,
-            Status = "running",
+            Status = JobStatus.Running,
             ProviderName = ctx.ProviderName,
             Command = "queue-albums",
             DryRun = ctx.DryRun,
@@ -48,20 +48,20 @@ public sealed class QueueAlbumsOrchestrator(
 
         try
         {
-            await step1.ExecuteAsync(jobRun, ctx, ct);
-            await step2.ExecuteAsync(jobRun, ctx, ct);
+            var snapshot = await step1.ExecuteAsync(jobRun, ctx, ct);
+            await step2.ExecuteAsync(jobRun, ctx, snapshot, ct);
 
-            await FinalizeAsync(ctx.DryRun ? "dry-run" : "succeeded", ct);
+            await FinalizeAsync(ctx.DryRun ? JobStatus.DryRun : JobStatus.Succeeded, ct);
         }
         catch (OperationCanceledException)
         {
-            await FinalizeAsync("partial", CancellationToken.None, "Cancelled by user");
+            await FinalizeAsync(JobStatus.Partial, CancellationToken.None, "Cancelled by user");
             throw;
         }
         catch (Exception ex)
         {
             Log.JobFailed(logger, ex.Message, ex);
-            await FinalizeAsync("failed", CancellationToken.None, ex.Message);
+            await FinalizeAsync(JobStatus.Failed, CancellationToken.None, ex.Message);
             throw;
         }
     }

@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Logging;
 using Musync.Domain;
 
-namespace Musync.Jobs;
+namespace Musync.Jobs.Import;
 
-public sealed class ImportStep3_GenerateReport(ILogger<ImportStep3_GenerateReport> logger)
+public sealed class GenerateReport(ILogger<GenerateReport> logger)
 {
     public Task ExecuteAsync(JobRun jobRun, ImportRunContext ctx, CancellationToken ct)
     {
@@ -19,7 +19,7 @@ public sealed class ImportStep3_GenerateReport(ILogger<ImportStep3_GenerateRepor
         Log.SyncStatus(logger, jobRun.Status);
         Log.TracksAdded(logger, jobRun.TracksAdded);
         Log.TracksSkipped(logger, jobRun.TracksSkipped);
-        Log.TracksMapped(logger, jobRun.NewAlbumsEncountered);
+        Log.TracksMapped(logger, jobRun.TracksMapped);
         Log.QueueSize(logger, jobRun.QueueSizeAfter);
 
         if (ctx.Limit.HasValue)

@@ -17,14 +17,17 @@ public sealed class ActiveTrackHistoryIndexTests
         return db;
     }
 
-    private static TrackHistory Active(string trackId) => new()
+    private static TrackHistory Active(string trackId)
     {
-        Id = Guid.CreateVersion7(),
-        JobRunId = Guid.CreateVersion7(),
-        Provider = "spotify",
-        TrackId = trackId,
-        AddedAt = DateTime.UtcNow
-    };
+        return new TrackHistory
+        {
+            Id = Guid.CreateVersion7(),
+            JobRunId = Guid.CreateVersion7(),
+            Provider = "spotify",
+            TrackId = trackId,
+            AddedAt = DateTime.UtcNow
+        };
+    }
 
     [Fact]
     public async Task TwoActiveRowsForSameTrack_Rejected()

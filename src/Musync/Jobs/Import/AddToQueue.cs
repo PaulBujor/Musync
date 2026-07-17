@@ -4,14 +4,15 @@ using Microsoft.Extensions.Logging;
 using Musync.Domain;
 using Musync.Infrastructure.Persistence;
 
-namespace Musync.Jobs;
+namespace Musync.Jobs.Import;
 
-public sealed class ImportStep2_AddToQueue(
+public sealed class AddToQueue(
     AppDbContext db,
     HybridCache cache,
-    ILogger<ImportStep2_AddToQueue> logger)
+    ILogger<AddToQueue> logger)
 {
-    public async Task ExecuteAsync(JobRun jobRun, ImportRunContext ctx, List<(string TargetTrackId, Track SourceTrack)> candidates, CancellationToken ct)
+    public async Task ExecuteAsync(JobRun jobRun, ImportRunContext ctx,
+        List<(string TargetTrackId, Track SourceTrack)> candidates, CancellationToken ct)
     {
         Log.ImportStep2Start(logger);
 
@@ -47,11 +48,13 @@ public sealed class ImportStep2_AddToQueue(
         var newTracks = new List<(string TargetTrackId, Track SourceTrack)>();
         foreach (var (targetId, sourceTrack) in candidates)
         {
-            if (existingTrackIds.Contains(targetId) || currentPlaylistIds.Contains(targetId) || likedTrackIds.Contains(targetId))
+            if (existingTrackIds.Contains(targetId) || currentPlaylistIds.Contains(targetId) ||
+                likedTrackIds.Contains(targetId))
             {
                 jobRun.TracksSkipped++;
                 continue;
             }
+
             newTracks.Add((targetId, sourceTrack));
         }
 

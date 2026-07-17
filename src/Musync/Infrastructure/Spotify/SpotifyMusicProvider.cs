@@ -10,9 +10,15 @@ namespace Musync.Infrastructure.Spotify;
 
 public sealed class SpotifyMusicProvider(HttpClient http, HttpClient writeHttp) : IMusicProvider
 {
+    // Spotify's max page size for library/playlist reads.
+    private const int PageSize = 50;
+
+    // Spotify's max items per playlist add/remove request.
+    private const int PlaylistWriteBatchSize = 100;
+
     public async IAsyncEnumerable<Album> GetSavedAlbumsAsync([EnumeratorCancellation] CancellationToken ct)
     {
-        var url = "me/albums?limit=50";
+        var url = $"me/albums?limit={PageSize}";
         while (url is not null)
         {
             var response = await http.GetAsync(url, ct);
@@ -25,7 +31,8 @@ public sealed class SpotifyMusicProvider(HttpClient http, HttpClient writeHttp) 
                 yield break;
 
             foreach (var item in page.Items)
-                yield return new Album(item.Album.Id, item.Album.Name, item.Album.Artists.Count > 0 ? item.Album.Artists[0].Name : "Unknown Artist");
+                yield return new Album(item.Album.Id, item.Album.Name,
+                    item.Album.Artists.Count > 0 ? item.Album.Artists[0].Name : "Unknown Artist");
 
             url = page.Next;
         }
@@ -34,7 +41,7 @@ public sealed class SpotifyMusicProvider(HttpClient http, HttpClient writeHttp) 
     public async IAsyncEnumerable<Track> GetAlbumTracksAsync(string albumId, string albumName,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var url = $"albums/{albumId}/tracks?limit=50";
+        var url = $"albums/{albumId}/tracks?limit={PageSize}";
         while (url is not null)
         {
             var response = await http.GetAsync(url, ct);
@@ -47,7 +54,8 @@ public sealed class SpotifyMusicProvider(HttpClient http, HttpClient writeHttp) 
                 yield break;
 
             foreach (var item in page.Items)
-                yield return new Track(item.Id, item.Name, item.Artists.Count > 0 ? item.Artists[0].Name : "Unknown Artist", albumName);
+                yield return new Track(item.Id, item.Name,
+                    item.Artists.Count > 0 ? item.Artists[0].Name : "Unknown Artist", albumName);
 
             url = page.Next;
         }
@@ -55,7 +63,7 @@ public sealed class SpotifyMusicProvider(HttpClient http, HttpClient writeHttp) 
 
     public async IAsyncEnumerable<Track> GetSavedTracksAsync([EnumeratorCancellation] CancellationToken ct)
     {
-        var url = "me/tracks?limit=50";
+        var url = $"me/tracks?limit={PageSize}";
         while (url is not null)
         {
             var response = await http.GetAsync(url, ct);
@@ -68,7 +76,9 @@ public sealed class SpotifyMusicProvider(HttpClient http, HttpClient writeHttp) 
                 yield break;
 
             foreach (var item in page.Items)
-                yield return new Track(item.Track.Id, item.Track.Name, item.Track.Artists.Count > 0 ? item.Track.Artists[0].Name : "Unknown Artist", item.Track.Album?.Name ?? "", Isrc: item.Track.ExternalIds?.Isrc);
+                yield return new Track(item.Track.Id, item.Track.Name,
+                    item.Track.Artists.Count > 0 ? item.Track.Artists[0].Name : "Unknown Artist",
+                    item.Track.Album?.Name ?? "", item.Track.ExternalIds?.Isrc);
 
             url = page.Next;
         }
@@ -77,7 +87,7 @@ public sealed class SpotifyMusicProvider(HttpClient http, HttpClient writeHttp) 
     public async IAsyncEnumerable<Track> GetPlaylistTracksAsync(string playlistId,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var url = $"playlists/{playlistId}/items?limit=50";
+        var url = $"playlists/{playlistId}/items?limit={PageSize}";
         while (url is not null)
         {
             var response = await http.GetAsync(url, ct);
@@ -111,7 +121,7 @@ public sealed class SpotifyMusicProvider(HttpClient http, HttpClient writeHttp) 
         foreach (var uri in trackUris)
         {
             batch.Add(uri);
-            if (batch.Count < 100) continue;
+            if (batch.Count < PlaylistWriteBatchSize) continue;
 
             await AddBatchAsync(playlistId, batch, ct);
             batch.Clear();
@@ -128,7 +138,7 @@ public sealed class SpotifyMusicProvider(HttpClient http, HttpClient writeHttp) 
         foreach (var uri in trackUris)
         {
             batch.Add(uri);
-            if (batch.Count < 100) continue;
+            if (batch.Count < PlaylistWriteBatchSize) continue;
 
             await RemoveBatchAsync(playlistId, batch, ct);
             batch.Clear();

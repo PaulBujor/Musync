@@ -3,10 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Musync.Domain;
-using Musync.Domain.Interfaces;
 using Musync.Infrastructure.Persistence;
-using Musync.Jobs;
-using Musync.Options;
+using Musync.Jobs.Sync;
 using Musync.Tests.Fakes;
 
 namespace Musync.Tests.Jobs;
@@ -23,13 +21,13 @@ public sealed class QueueAlbumsOrchestratorTests
         services.AddHybridCache();
 
         services.AddSingleton<ILogger<QueueAlbumsOrchestrator>>(NullLogger<QueueAlbumsOrchestrator>.Instance);
-        services.AddSingleton<ILogger<SyncStep1_SnapshotAndDiff>>(NullLogger<SyncStep1_SnapshotAndDiff>.Instance);
-        services.AddSingleton<ILogger<SyncStep2_AddNewTracks>>(NullLogger<SyncStep2_AddNewTracks>.Instance);
-        services.AddSingleton<ILogger<SyncStep3_GenerateReport>>(NullLogger<SyncStep3_GenerateReport>.Instance);
+        services.AddSingleton<ILogger<SnapshotAndDiff>>(NullLogger<SnapshotAndDiff>.Instance);
+        services.AddSingleton<ILogger<AddNewTracks>>(NullLogger<AddNewTracks>.Instance);
+        services.AddSingleton<ILogger<GenerateReport>>(NullLogger<GenerateReport>.Instance);
 
-        services.AddSingleton<SyncStep1_SnapshotAndDiff>();
-        services.AddSingleton<SyncStep2_AddNewTracks>();
-        services.AddSingleton<SyncStep3_GenerateReport>();
+        services.AddSingleton<SnapshotAndDiff>();
+        services.AddSingleton<AddNewTracks>();
+        services.AddSingleton<GenerateReport>();
 
         var sp = services.BuildServiceProvider();
 
@@ -51,12 +49,12 @@ public sealed class QueueAlbumsOrchestratorTests
         int? limit = null)
     {
         return new SyncRunContext(
-            ProviderName: "spotify",
-            Target: provider,
-            PlaylistId: "test-playlist",
-            MaxDegreeOfParallelism: 3,
-            DryRun: dryRun,
-            Limit: limit);
+            "spotify",
+            provider,
+            "test-playlist",
+            3,
+            dryRun,
+            limit);
     }
 
     [Fact]
@@ -66,9 +64,9 @@ public sealed class QueueAlbumsOrchestratorTests
         var sp = BuildTestServices();
 
         var db = sp.GetRequiredService<AppDbContext>();
-        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
-        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
-        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
 
         var ctx = CreateContext(provider);
@@ -94,13 +92,13 @@ public sealed class QueueAlbumsOrchestratorTests
             new("album-a", "Album A", "Artist A")
         };
 
-        var provider = new LocalMockMusicProvider(savedAlbums: albums);
+        var provider = new LocalMockMusicProvider(albums);
         var sp = BuildTestServices();
 
         var db = sp.GetRequiredService<AppDbContext>();
-        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
-        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
-        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
 
         var ctx = CreateContext(provider);
@@ -139,13 +137,13 @@ public sealed class QueueAlbumsOrchestratorTests
             new("track-a1", "Track A1", "Artist A", "Album A")
         };
 
-        var provider = new LocalMockMusicProvider(savedAlbums: albums, savedTracks: savedTracks);
+        var provider = new LocalMockMusicProvider(albums, savedTracks: savedTracks);
         var sp = BuildTestServices();
 
         var db = sp.GetRequiredService<AppDbContext>();
-        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
-        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
-        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
 
         var ctx = CreateContext(provider);
@@ -179,7 +177,7 @@ public sealed class QueueAlbumsOrchestratorTests
             new("album-a", "Album A", "Artist A")
         };
 
-        var provider = new LocalMockMusicProvider(savedAlbums: albums);
+        var provider = new LocalMockMusicProvider(albums);
         var sp = BuildTestServices();
 
         var db = sp.GetRequiredService<AppDbContext>();
@@ -195,9 +193,9 @@ public sealed class QueueAlbumsOrchestratorTests
         });
         await db.SaveChangesAsync();
 
-        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
-        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
-        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
 
         var ctx = CreateContext(provider);
@@ -224,7 +222,7 @@ public sealed class QueueAlbumsOrchestratorTests
             new("album-a", "Album A", "Artist A")
         };
 
-        var provider = new LocalMockMusicProvider(savedAlbums: albums);
+        var provider = new LocalMockMusicProvider(albums);
         var sp = BuildTestServices();
 
         var db = sp.GetRequiredService<AppDbContext>();
@@ -239,9 +237,9 @@ public sealed class QueueAlbumsOrchestratorTests
         });
         await db.SaveChangesAsync();
 
-        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
-        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
-        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
 
         var ctx = CreateContext(provider);
@@ -280,13 +278,13 @@ public sealed class QueueAlbumsOrchestratorTests
             new("track-a1", "Track A1", "Artist A", "Album A")
         };
 
-        var provider = new LocalMockMusicProvider(savedAlbums: albums, playlistTracks: playlistTracks);
+        var provider = new LocalMockMusicProvider(albums, playlistTracks);
         var sp = BuildTestServices();
 
         var db = sp.GetRequiredService<AppDbContext>();
-        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
-        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
-        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
 
         var ctx = CreateContext(provider);
@@ -316,13 +314,13 @@ public sealed class QueueAlbumsOrchestratorTests
             ["album-y"] = [new Track("shared-1", "Shared", "Artist Y", "Album Y")]
         };
 
-        var provider = new LocalMockMusicProvider(savedAlbums: albums, albumTracks: albumTracks);
+        var provider = new LocalMockMusicProvider(albums, albumTracks: albumTracks);
         var sp = BuildTestServices();
 
         var db = sp.GetRequiredService<AppDbContext>();
-        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
-        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
-        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
 
         var ctx = CreateContext(provider);
@@ -341,13 +339,13 @@ public sealed class QueueAlbumsOrchestratorTests
             new("album-a", "Album A", "Artist A")
         };
 
-        var provider = new LocalMockMusicProvider(savedAlbums: albums);
+        var provider = new LocalMockMusicProvider(albums);
         var sp = BuildTestServices();
 
         var db = sp.GetRequiredService<AppDbContext>();
-        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
-        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
-        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
 
         var orchestrator = new QueueAlbumsOrchestrator(db, step1, step2, step3, logger);
@@ -385,9 +383,9 @@ public sealed class QueueAlbumsOrchestratorTests
         var sp = BuildTestServices();
 
         var db = sp.GetRequiredService<AppDbContext>();
-        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
-        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
-        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
 
         var ctx = CreateContext(provider);
@@ -424,18 +422,18 @@ public sealed class QueueAlbumsOrchestratorTests
         };
 
         var provider = new LocalMockMusicProvider(
-            savedAlbums: albums,
-            playlistTracks: playlistTracks,
-            savedTracks: savedTracks);
+            albums,
+            playlistTracks,
+            savedTracks);
         var sp = BuildTestServices();
 
         var db = sp.GetRequiredService<AppDbContext>();
-        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
-        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
-        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
 
-        var ctx = CreateContext(provider, dryRun: true);
+        var ctx = CreateContext(provider, true);
         var orchestrator = new QueueAlbumsOrchestrator(db, step1, step2, step3, logger);
         await orchestrator.RunAsync(ctx, CancellationToken.None);
 
@@ -461,13 +459,13 @@ public sealed class QueueAlbumsOrchestratorTests
             new("album-c", "Album C", "Artist C")
         };
 
-        var provider = new LocalMockMusicProvider(savedAlbums: albums);
+        var provider = new LocalMockMusicProvider(albums);
         var sp = BuildTestServices();
 
         var db = sp.GetRequiredService<AppDbContext>();
-        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
-        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
-        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
 
         var ctx = CreateContext(provider, limit: 1);
@@ -491,13 +489,13 @@ public sealed class QueueAlbumsOrchestratorTests
             new("album-a", "Album A", "Artist A")
         };
 
-        var provider = new LocalMockMusicProvider(savedAlbums: albums);
+        var provider = new LocalMockMusicProvider(albums);
         var sp = BuildTestServices();
 
         var db = sp.GetRequiredService<AppDbContext>();
-        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
-        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
-        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
         var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
 
         var ctx = CreateContext(provider, limit: 0);

@@ -15,7 +15,7 @@ public sealed class ReconcileQueueJob(
         {
             Id = Guid.CreateVersion7(),
             StartedAt = DateTime.UtcNow,
-            Status = "running",
+            Status = JobStatus.Running,
             ProviderName = ctx.ProviderName,
             Command = "reconcile-queue",
             DryRun = ctx.DryRun
@@ -82,17 +82,17 @@ public sealed class ReconcileQueueJob(
             jobRun.TracksAdded = backfilled;
             jobRun.QueueSizeAfter = distinctIds.Count;
 
-            await FinalizeAsync(ctx.DryRun ? "dry-run" : "succeeded", ct);
+            await FinalizeAsync(ctx.DryRun ? JobStatus.DryRun : JobStatus.Succeeded, ct);
         }
         catch (OperationCanceledException)
         {
-            await FinalizeAsync("partial", CancellationToken.None, "Cancelled by user");
+            await FinalizeAsync(JobStatus.Partial, CancellationToken.None, "Cancelled by user");
             throw;
         }
         catch (Exception ex)
         {
             Log.JobFailed(logger, ex.Message, ex);
-            await FinalizeAsync("failed", CancellationToken.None, ex.Message);
+            await FinalizeAsync(JobStatus.Failed, CancellationToken.None, ex.Message);
             throw;
         }
     }

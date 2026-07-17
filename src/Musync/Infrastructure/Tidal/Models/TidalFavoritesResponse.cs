@@ -4,139 +4,111 @@ namespace Musync.Infrastructure.Tidal.Models;
 
 // ── Top-level JSON:API response ────────────────────────────────
 
-public class TidalCollectionPage
+public sealed class TidalCollectionPage
 {
-    [JsonPropertyName("data")]
-    public List<TidalResourceIdentifier>? Data { get; set; }
+    [JsonPropertyName("data")] public List<TidalResourceIdentifier>? Data { get; init; }
 
-    [JsonPropertyName("included")]
-    public List<TidalTrackResource>? Included { get; set; }
+    [JsonPropertyName("included")] public List<TidalTrackResource>? Included { get; init; }
 
-    [JsonPropertyName("links")]
-    public TidalLinks? Links { get; set; }
+    [JsonPropertyName("links")] public TidalLinks? Links { get; init; }
 }
 
 // ── Resource identifiers (data[] entries) ─────────────────────
 
-public class TidalResourceIdentifier
+public sealed class TidalResourceIdentifier
 {
-    [JsonPropertyName("id")]
-    public string? Id { get; set; }
+    [JsonPropertyName("id")] public string? Id { get; init; }
 
-    [JsonPropertyName("type")]
-    public string? Type { get; set; }
+    [JsonPropertyName("type")] public string? Type { get; init; }
 
-    [JsonPropertyName("meta")]
-    public TidalResourceMeta? Meta { get; set; }
+    [JsonPropertyName("meta")] public TidalResourceMeta? Meta { get; init; }
 }
 
-public class TidalResourceMeta
+public sealed class TidalResourceMeta
 {
-    [JsonPropertyName("addedAt")]
-    public string? AddedAt { get; set; }
+    [JsonPropertyName("addedAt")] public string? AddedAt { get; init; }
 }
 
 // ── Track resource (included[] entries) ────────────────────────
 
-public class TidalTrackResource
+public sealed class TidalTrackResource
 {
-    [JsonPropertyName("id")]
-    public string? Id { get; set; }
+    [JsonPropertyName("id")] public string? Id { get; init; }
 
-    [JsonPropertyName("type")]
-    public string? Type { get; set; }
+    [JsonPropertyName("type")] public string? Type { get; init; }
 
-    [JsonPropertyName("attributes")]
-    public TidalTrackAttributes? Attributes { get; set; }
+    [JsonPropertyName("attributes")] public TidalTrackAttributes? Attributes { get; init; }
 
-    [JsonPropertyName("relationships")]
-    public TidalTrackRelationships? Relationships { get; set; }
+    [JsonPropertyName("relationships")] public TidalTrackRelationships? Relationships { get; init; }
 }
 
-public class TidalTrackAttributes
+public sealed class TidalTrackAttributes
 {
-    [JsonPropertyName("title")]
-    public string? Title { get; set; }
+    [JsonPropertyName("title")] public string? Title { get; init; }
 
-    [JsonPropertyName("isrc")]
-    public string? Isrc { get; set; }
+    [JsonPropertyName("isrc")] public string? Isrc { get; init; }
 }
 
-public class TidalTrackRelationships
+public sealed class TidalTrackRelationships
 {
-    [JsonPropertyName("artists")]
-    public TidalRelationshipData? Artists { get; set; }
+    [JsonPropertyName("artists")] public TidalRelationshipData? Artists { get; init; }
 
-    [JsonPropertyName("albums")]
-    public TidalRelationshipData? Albums { get; set; }
+    [JsonPropertyName("albums")] public TidalRelationshipData? Albums { get; init; }
 }
 
-public class TidalRelationshipData
+public sealed class TidalRelationshipData
 {
-    [JsonPropertyName("data")]
-    public List<TidalResourceIdentifier>? Data { get; set; }
+    [JsonPropertyName("data")] public List<TidalResourceIdentifier>? Data { get; init; }
 }
 
 // ── Pagination links ──────────────────────────────────────────
 
-public class TidalLinks
+public sealed class TidalLinks
 {
-    [JsonPropertyName("self")]
-    public string? Self { get; set; }
+    [JsonPropertyName("self")] public string? Self { get; init; }
 
-    [JsonPropertyName("next")]
-    public string? Next { get; set; }
+    [JsonPropertyName("next")] public string? Next { get; init; }
 
-    [JsonPropertyName("meta")]
-    public TidalLinksMeta? Meta { get; set; }
+    [JsonPropertyName("meta")] public TidalLinksMeta? Meta { get; init; }
 }
 
-public class TidalLinksMeta
+public sealed class TidalLinksMeta
 {
-    [JsonPropertyName("nextCursor")]
-    public string? NextCursor { get; set; }
+    [JsonPropertyName("nextCursor")] public string? NextCursor { get; init; }
 }
 
 // ── Artist/album resolution responses ──────────────────────────
 
-public class TidalArtistsPage
+public sealed class TidalArtistsPage
 {
-    [JsonPropertyName("included")]
-    public List<TidalArtistResource>? Included { get; set; }
+    [JsonPropertyName("included")] public List<TidalArtistResource>? Included { get; init; }
 }
 
-public class TidalArtistResource
+public sealed class TidalArtistResource
 {
-    [JsonPropertyName("id")]
-    public string? Id { get; set; }
+    [JsonPropertyName("id")] public string? Id { get; init; }
 
-    [JsonPropertyName("attributes")]
-    public TidalArtistAttributes? Attributes { get; set; }
+    [JsonPropertyName("attributes")] public TidalArtistAttributes? Attributes { get; init; }
 }
 
-public class TidalArtistAttributes
+public sealed class TidalArtistAttributes
 {
-    [JsonPropertyName("name")]
-    public string? Name { get; set; }
+    [JsonPropertyName("name")] public string? Name { get; init; }
 }
 
-public class TidalAlbumsPage
+public sealed class TidalAlbumsPage
 {
-    [JsonPropertyName("included")]
-    public List<TidalAlbumResource>? Included { get; set; }
+    [JsonPropertyName("included")] public List<TidalAlbumResource>? Included { get; init; }
 }
 
-public class TidalAlbumResource
+public sealed class TidalAlbumResource
 {
-    [JsonPropertyName("id")]
-    public string? Id { get; set; }
+    [JsonPropertyName("id")] public string? Id { get; init; }
 
-    [JsonPropertyName("attributes")]
-    public TidalAlbumAttributes? Attributes { get; set; }
+    [JsonPropertyName("attributes")] public TidalAlbumAttributes? Attributes { get; init; }
 }
 
-public class TidalAlbumAttributes
+public sealed class TidalAlbumAttributes
 {
-    [JsonPropertyName("title")]
-    public string? Title { get; set; }
+    [JsonPropertyName("title")] public string? Title { get; init; }
 }
