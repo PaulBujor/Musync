@@ -2,8 +2,11 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Musync.Options;
 
-public sealed class DatabaseOptions
+public sealed record DatabaseOptions
 {
+    public static readonly string[] Allowed = ["Sqlite", "Postgres"];
+
     [Required]
-    public string Provider { get; set; } = "Sqlite";
+    [AllowedValues("Sqlite", "Postgres")]
+    public string Provider { get; init; } = "Sqlite";
 }

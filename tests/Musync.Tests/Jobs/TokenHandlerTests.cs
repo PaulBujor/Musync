@@ -159,6 +159,62 @@ public sealed class TokenHandlerTests : IDisposable
     }
 
     [Fact]
+    public async Task SendAsync_RetriesAfter401_ResendsRequestBody()
+    {
+        _db.RefreshTokens.Add(new RefreshToken
+        {
+            Id = Guid.CreateVersion7(),
+            Token = "valid-refresh-token",
+            Provider = "test",
+            UpdatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+
+        var authenticator = new MockAuthenticator(_db);
+        var logger = NullLoggerFactory.Instance.CreateLogger("FakeTokenHandler");
+        var tokenHandler = new FakeTokenHandler(_scopeFactory, logger, authenticator);
+
+        var apiCalls = 0;
+        var observedBodies = new List<string>();
+        tokenHandler.InnerHandler = new MockHttpMessageHandler(request =>
+        {
+            if (request.RequestUri?.AbsoluteUri == "https://example.com/token")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """{"access_token":"access","expires_in":3600}""",
+                        Encoding.UTF8,
+                        "application/json")
+                };
+            }
+
+            apiCalls++;
+            observedBodies.Add(request.Content is null
+                ? ""
+                : request.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+
+            // First attempt: 401 forces a refresh + resend; second attempt succeeds.
+            return apiCalls == 1
+                ? new HttpResponseMessage(HttpStatusCode.Unauthorized)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""{"data":"ok"}""", Encoding.UTF8, "application/json")
+                };
+        });
+
+        using var client = new HttpClient(tokenHandler);
+
+        var response = await client.PostAsync(
+            "https://example.com/api/resource",
+            new StringContent("payload", Encoding.UTF8, "text/plain"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, apiCalls);
+        Assert.Equal(["payload", "payload"], observedBodies);
+    }
+
+    [Fact]
     public async Task SendAsync_NoRefreshToken_TriggersReauth()
     {
         var authenticator = new MockAuthenticator(_db);

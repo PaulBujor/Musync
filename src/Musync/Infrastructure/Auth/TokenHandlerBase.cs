@@ -27,8 +27,12 @@ public abstract class TokenHandlerBase(
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
         await EnsureTokenAsync(ct);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
 
+        // The 401 path resends the request, but sending consumes its content stream, so keep a
+        // buffered clone to retry with (a POST/DELETE body would otherwise be empty on retry).
+        var retryRequest = await CloneRequestAsync(request, ct);
+
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
         var response = await base.SendAsync(request, ct);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
@@ -36,11 +40,29 @@ public abstract class TokenHandlerBase(
             logger.LogWarning("Received 401. Forcing {Provider} token refresh...", ProviderName);
             _accessToken = null;
             await EnsureTokenAsync(ct);
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-            response = await base.SendAsync(request, ct);
+            retryRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+            response = await base.SendAsync(retryRequest, ct);
         }
 
         return response;
+    }
+
+    private static async Task<HttpRequestMessage> CloneRequestAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        var clone = new HttpRequestMessage(request.Method, request.RequestUri) { Version = request.Version };
+
+        foreach (var header in request.Headers)
+            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+
+        if (request.Content is not null)
+        {
+            var bytes = await request.Content.ReadAsByteArrayAsync(ct);
+            clone.Content = new ByteArrayContent(bytes);
+            foreach (var header in request.Content.Headers)
+                clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        return clone;
     }
 
     private async Task EnsureTokenAsync(CancellationToken ct)

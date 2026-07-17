@@ -23,9 +23,12 @@ public sealed class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<App
             case "Sqlite":
                 builder.UseSqlite(configuration.GetConnectionString("Sqlite"));
                 break;
-            default:
+            case "Postgres":
                 builder.UseNpgsql(configuration.GetConnectionString("Postgres")!);
                 break;
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported database provider: {provider}. Valid values: Sqlite, Postgres.");
         }
 
         return new AppDbContext(builder.Options);

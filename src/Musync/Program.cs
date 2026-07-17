@@ -17,14 +17,13 @@ using Musync.Options;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Spotify options
+// Validated lazily (on first use), not at host build, so a command targeting one provider doesn't
+// fail because another is unconfigured. The run helpers report validation failures as exit code 1.
 builder.Services
     .AddOptions<SpotifyOptions>()
     .BindConfiguration("Spotify")
-    .ValidateDataAnnotations()
-    .ValidateOnStart();
+    .ValidateDataAnnotations();
 
-// Tidal options (validated on use, not on start)
 builder.Services
     .AddOptions<TidalOptions>()
     .BindConfiguration("Tidal")
@@ -32,14 +31,22 @@ builder.Services
 
 builder.Services.AddHybridCache();
 
-// Database provider selection
+// Database provider selection (allowed values are enforced explicitly below)
 builder.Services
     .AddOptions<DatabaseOptions>()
     .BindConfiguration("Database")
-    .ValidateDataAnnotations()
-    .ValidateOnStart();
+    .ValidateDataAnnotations();
 
 var dbProvider = builder.Configuration.GetValue<string>("Database:Provider") ?? "Sqlite";
+
+// ValidateOnStart never fires (the host is never started), so check the provider here to fail
+// with a clean message instead of an unhandled throw when the DbContext is first resolved.
+if (!DatabaseOptions.Allowed.Contains(dbProvider))
+{
+    await Console.Error.WriteLineAsync(
+        $"Invalid Database:Provider '{dbProvider}'. Valid values: {string.Join(", ", DatabaseOptions.Allowed)}.");
+    return 1;
+}
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
@@ -355,6 +362,20 @@ static async Task<int> RunQueueAlbumsAsync(
     }
 
     await using var scope = services.CreateAsyncScope();
+
+    // Validate options before the provider is built (its HTTP pipeline reads them too).
+    var (opts, optsError) = TryResolveSpotifyOptions(scope.ServiceProvider);
+    if (opts is null)
+    {
+        await Console.Error.WriteLineAsync(optsError);
+        return 1;
+    }
+    if (string.IsNullOrEmpty(opts.QueuePlaylistId))
+    {
+        await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for sync.");
+        return 1;
+    }
+
     var provider = scope.ServiceProvider.GetKeyedService<IMusicProvider>(providerKey);
     if (provider is null)
     {
@@ -369,12 +390,6 @@ static async Task<int> RunQueueAlbumsAsync(
     var step3 = scope.ServiceProvider.GetRequiredService<SyncStep3_GenerateReport>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<QueueAlbumsOrchestrator>>();
 
-    var opts = scope.ServiceProvider.GetRequiredService<IOptions<SpotifyOptions>>().Value;
-    if (string.IsNullOrEmpty(opts.QueuePlaylistId))
-    {
-        await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for sync.");
-        return 1;
-    }
     var playlistId = opts.QueuePlaylistId;
     var maxParallelism = opts.MaxConcurrentRequests;
 
@@ -404,29 +419,32 @@ static async Task<int> RunReconcileAsync(
     IServiceProvider services,
     CancellationToken ct)
 {
+    if (providerKey != "spotify")
+    {
+        await Console.Error.WriteLineAsync($"reconcile-queue is not supported for provider: {providerKey}");
+        return 1;
+    }
+
     await using var scope = services.CreateAsyncScope();
+
+    var (opts, optsError) = TryResolveSpotifyOptions(scope.ServiceProvider);
+    if (opts is null)
+    {
+        await Console.Error.WriteLineAsync(optsError);
+        return 1;
+    }
+    if (string.IsNullOrEmpty(opts.QueuePlaylistId))
+    {
+        await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for reconcile-queue.");
+        return 1;
+    }
+    var playlistId = opts.QueuePlaylistId;
+
     var provider = scope.ServiceProvider.GetKeyedService<IMusicProvider>(providerKey);
     if (provider is null)
     {
         await Console.Error.WriteLineAsync(
             $"Provider '{providerKey}' is not configured. Check appsettings.json.");
-        return 1;
-    }
-
-    string playlistId;
-    if (providerKey == "spotify")
-    {
-        var opts = scope.ServiceProvider.GetRequiredService<IOptions<SpotifyOptions>>().Value;
-        if (string.IsNullOrEmpty(opts.QueuePlaylistId))
-        {
-            await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for reconcile-queue.");
-            return 1;
-        }
-        playlistId = opts.QueuePlaylistId;
-    }
-    else
-    {
-        await Console.Error.WriteLineAsync($"reconcile-queue is not supported for provider: {providerKey}");
         return 1;
     }
 
@@ -483,7 +501,26 @@ static async Task<int> RunImportAsync(
 
     await using var scope = services.CreateAsyncScope();
 
-    var targetProvider = scope.ServiceProvider.GetKeyedService<IMusicProvider>(targetProviderKey);
+    // Target is always Spotify (guarded above); validate its options before any provider is built.
+    var (spotOpts, spotOptsError) = TryResolveSpotifyOptions(scope.ServiceProvider);
+    if (spotOpts is null)
+    {
+        await Console.Error.WriteLineAsync(spotOptsError);
+        return 1;
+    }
+    if (string.IsNullOrEmpty(spotOpts.QueuePlaylistId))
+    {
+        await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for import.");
+        return 1;
+    }
+    var playlistId = spotOpts.QueuePlaylistId;
+
+    var (targetProvider, targetError) = TryResolveProvider(scope.ServiceProvider, targetProviderKey);
+    if (targetError is not null)
+    {
+        await Console.Error.WriteLineAsync(targetError);
+        return 1;
+    }
     if (targetProvider is null)
     {
         await Console.Error.WriteLineAsync(
@@ -491,7 +528,12 @@ static async Task<int> RunImportAsync(
         return 1;
     }
 
-    var sourceProvider = scope.ServiceProvider.GetKeyedService<IMusicProvider>(sourceProviderKey);
+    var (sourceProvider, sourceError) = TryResolveProvider(scope.ServiceProvider, sourceProviderKey);
+    if (sourceError is not null)
+    {
+        await Console.Error.WriteLineAsync(sourceError);
+        return 1;
+    }
     if (sourceProvider is null)
     {
         await Console.Error.WriteLineAsync(
@@ -513,14 +555,6 @@ static async Task<int> RunImportAsync(
     var step3 = scope.ServiceProvider.GetRequiredService<ImportStep3_GenerateReport>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<ImportOrchestrator>>();
 
-    var spotOpts = scope.ServiceProvider.GetRequiredService<IOptions<SpotifyOptions>>().Value;
-    if (string.IsNullOrEmpty(spotOpts.QueuePlaylistId))
-    {
-        await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for import.");
-        return 1;
-    }
-    var playlistId = spotOpts.QueuePlaylistId;
-
     var ctx = new ImportRunContext(sourceProviderKey, targetProviderKey, sourceProvider, targetProvider, mapper, playlistId, dryRun, limit);
     var orchestrator = new ImportOrchestrator(db, step1, step2, step3, logger);
 
@@ -539,4 +573,31 @@ static async Task<int> RunImportAsync(
     }
 
     return 0;
+}
+
+// Resolves and validates Spotify options, turning a data-annotation failure into a message.
+static (SpotifyOptions? Options, string? Error) TryResolveSpotifyOptions(IServiceProvider services)
+{
+    try
+    {
+        return (services.GetRequiredService<IOptions<SpotifyOptions>>().Value, null);
+    }
+    catch (OptionsValidationException ex)
+    {
+        return (null, $"Invalid Spotify configuration: {string.Join("; ", ex.Failures)}");
+    }
+}
+
+// Null provider with null error means the provider isn't registered; an error means its options
+// failed validation while the HTTP pipeline read them.
+static (IMusicProvider? Provider, string? Error) TryResolveProvider(IServiceProvider services, string key)
+{
+    try
+    {
+        return (services.GetKeyedService<IMusicProvider>(key), null);
+    }
+    catch (OptionsValidationException ex)
+    {
+        return (null, $"Invalid {key} configuration: {string.Join("; ", ex.Failures)}");
+    }
 }

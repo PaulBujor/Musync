@@ -1,5 +1,3 @@
-using System.Net.Http.Headers;
-using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -21,18 +19,17 @@ public sealed class SpotifyTokenHandler(
 
     protected override string ProviderName => "spotify";
 
+    // Musync authenticates as a PKCE public client, so refresh sends client_id in the body
+    // rather than an HTTP Basic secret. See Spotify's "Refreshing tokens" guide.
     protected override HttpRequestMessage CreateRefreshRequest(string refreshToken)
     {
-        var authBytes = Encoding.ASCII.GetBytes($"{_options.ClientId}:{_options.ClientSecret}");
-        var request = new HttpRequestMessage(HttpMethod.Post, TokenUrlConst)
+        return new HttpRequestMessage(HttpMethod.Post, TokenUrlConst)
         {
             Content = new FormUrlEncodedContent([
                 new KeyValuePair<string, string>("grant_type", "refresh_token"),
-                new KeyValuePair<string, string>("refresh_token", refreshToken)
+                new KeyValuePair<string, string>("refresh_token", refreshToken),
+                new KeyValuePair<string, string>("client_id", _options.ClientId)
             ])
         };
-        request.Headers.Authorization = new AuthenticationHeaderValue(
-            "Basic", Convert.ToBase64String(authBytes));
-        return request;
     }
 }
