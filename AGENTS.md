@@ -28,9 +28,20 @@ dotnet add src/Musync package System.CommandLine
 
 | Mode | Command |
 |------|---------|
-| Direct | `dotnet run --project src/Musync` |
+| Direct | `dotnet run --project src/Musync -- <command>` (e.g. `spotify queue-albums`) |
 | Docker | `docker compose up` (uses `compose.yaml`) |
 | Tests | `dotnet test` (mock provider, no credentials needed) |
+| Lint | `dotnet format --verify-no-changes` (CI gate; run `dotnet format` to fix) |
+
+## CLI Command Tree (`Program.cs` is the source of truth)
+
+`Program.cs` is both the composition root and the dispatcher: it builds the host, registers DI, parses `args`, then calls the `RunQueueAlbumsAsync` / `RunImportAsync` helpers.
+
+- `<provider> queue-albums` — sync saved albums into that provider's queue playlist. `spotify` and `tidal` supported.
+- `<provider> import --source <provider>` — import from another provider (source ≠ target).
+- Global recursive options: `--dry-run` (no provider mutation), `--limit <n>`.
+- Deprecated aliases `sync` and `import-tidal` still dispatch (to `spotify queue-albums` / `spotify import --source tidal`) but log a warning and return exit code `3`.
+- Exit codes: `0` success, `1` error/misconfiguration, `2` cancelled, `3` deprecated alias succeeded.
 
 ## Architecture (non-obvious from filenames)
 
@@ -42,7 +53,8 @@ dotnet add src/Musync package System.CommandLine
 
 ## Key Patterns
 
-- **Provider selection (music)**: Always Spotify in production. Mock provider lives in `tests/Fakes/` and is registered directly in test DI.
+- **Provider selection (music)**: Providers are **keyed DI services** — `GetKeyedService<IMusicProvider>("spotify"|"tidal")` and `GetKeyedService<ITrackMapper>(...)`, resolved by name from the command, never injected directly. Tidal wiring is registered only when `Tidal:ApiBaseUrl` is set; targeting an unconfigured provider fails with exit code `1`. Mock provider lives in `tests/Fakes/` and is registered directly in test DI.
+- **Jobs**: An orchestrator (`QueueAlbumsOrchestrator` / `ImportOrchestrator`) runs numbered step classes in sequence, threading a `*RunContext` record that carries the resolved provider(s), playlist id, `dryRun`, and `limit`. Step classes are DI-scoped; the provider reaches them via the context, not DI.
 - **Provider selection (database)**: `Database:Provider` config (`"Sqlite"` or `"Postgres"`). Default: SQLite. Docker overrides to PostgreSQL via environment variable.
 - **Auth**: PKCE OAuth with browser-based flow on first run; refresh token persisted to `AppSettings` table via `ISpotifyAuthenticator` / `SpotifyTokenHandler` (a `DelegatingHandler`)
 - **Token management**: `SpotifyTokenHandler` is a `DelegatingHandler` — NOT mixed into `SpotifyMusicProvider`. Token refresh serialised with `SemaphoreSlim(1,1)`. New refresh tokens written immediately to DB in a dedicated `DbContext` transaction.
