@@ -8,7 +8,7 @@ using Musync.Infrastructure.Spotify.Models;
 
 namespace Musync.Infrastructure.Spotify;
 
-public sealed class SpotifyMusicProvider(HttpClient http) : IMusicProvider
+public sealed class SpotifyMusicProvider(HttpClient http, HttpClient writeHttp) : IMusicProvider
 {
     public async IAsyncEnumerable<Album> GetSavedAlbumsAsync([EnumeratorCancellation] CancellationToken ct)
     {
@@ -142,7 +142,7 @@ public sealed class SpotifyMusicProvider(HttpClient http) : IMusicProvider
     {
         var payload = new { uris = uris.Select(u => $"spotify:track:{u}").ToArray() };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-        var response = await http.PostAsync($"playlists/{playlistId}/items", content, ct);
+        var response = await writeHttp.PostAsync($"playlists/{playlistId}/items", content, ct);
         response.EnsureSuccessStatusCode();
     }
 
@@ -155,7 +155,7 @@ public sealed class SpotifyMusicProvider(HttpClient http) : IMusicProvider
             {
                 Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
             };
-        var response = await http.SendAsync(request, ct);
+        var response = await writeHttp.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
     }
 }

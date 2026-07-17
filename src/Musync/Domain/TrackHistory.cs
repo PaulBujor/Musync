@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Musync.Domain;
 
-[Index(nameof(Provider), nameof(TrackId))]
 [Index(nameof(RemovedAt))]
 [Index(nameof(JobRunId))]
 public sealed class TrackHistory

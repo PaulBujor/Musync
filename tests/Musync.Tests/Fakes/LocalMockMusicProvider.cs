@@ -7,11 +7,13 @@ namespace Musync.Tests.Fakes;
 public sealed class LocalMockMusicProvider(
     List<Album>? savedAlbums = null,
     List<Track>? playlistTracks = null,
-    List<Track>? savedTracks = null)
+    List<Track>? savedTracks = null,
+    Dictionary<string, List<Track>>? albumTracks = null)
     : IMusicProvider
 {
     private readonly List<Album> _savedAlbums = savedAlbums ?? [];
     private readonly List<Track> _savedTracks = savedTracks ?? [];
+    private readonly Dictionary<string, List<Track>>? _albumTracksOverride = albumTracks;
     private List<Track> _playlistTracks = playlistTracks ?? [];
 
     public IReadOnlyList<Track> PlaylistTracks => _playlistTracks.AsReadOnly();
@@ -72,6 +74,9 @@ public sealed class LocalMockMusicProvider(
 
     private List<Track> AlbumTracks(string albumId, string albumName)
     {
+        if (_albumTracksOverride is not null)
+            return _albumTracksOverride.TryGetValue(albumId, out var tracks) ? tracks : [];
+
         return albumId switch
         {
             "album-a" =>

@@ -82,7 +82,9 @@ public sealed class SyncStep2_AddNewTracks(
                 var albumTracks = new List<Track>();
                 await foreach (var track in ctx.Target.GetAlbumTracksAsync(album.Id, album.Name, ct2))
                 {
-                    if (likedTrackIds.Contains(track.Id) || historyTrackIds.Contains(track.Id))
+                    if (likedTrackIds.Contains(track.Id)
+                        || historyTrackIds.Contains(track.Id)
+                        || ctx.CurrentPlaylistTrackIds.Contains(track.Id))
                     {
                         Interlocked.Increment(ref tracksSkipped);
                         continue;
@@ -120,6 +122,12 @@ public sealed class SyncStep2_AddNewTracks(
         {
             Log.LimitReached(logger, ctx.Limit.Value);
         }
+
+        // A track can appear on more than one saved album; keep a single copy per id.
+        newTracks = newTracks
+            .GroupBy(t => t.Id)
+            .Select(g => g.First())
+            .ToList();
 
         if (newTracks.Count > 0)
         {

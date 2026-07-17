@@ -55,6 +55,12 @@ public sealed class ImportStep2_AddToQueue(
             newTracks.Add((targetId, sourceTrack));
         }
 
+        // Distinct source tracks can map to the same target id; keep one.
+        newTracks = newTracks
+            .GroupBy(t => t.TargetTrackId)
+            .Select(g => g.First())
+            .ToList();
+
         if (ctx.Limit.HasValue && newTracks.Count > ctx.Limit.Value)
         {
             newTracks = newTracks.Take(ctx.Limit.Value).ToList();

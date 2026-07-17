@@ -11,4 +11,7 @@ public record SyncRunContext(
     int? Limit)
 {
     public int QueueSizeAfterStep1 { get; set; }
+
+    // Track ids currently in the playlist, captured by step 1 so step 2 can skip re-adding them.
+    public HashSet<string> CurrentPlaylistTrackIds { get; set; } = [];
 }

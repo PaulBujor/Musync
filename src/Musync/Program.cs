@@ -62,6 +62,7 @@ builder.Services.AddScoped<SyncStep3_GenerateReport>();
 builder.Services.AddScoped<ImportStep1_FetchAndMap>();
 builder.Services.AddScoped<ImportStep2_AddToQueue>();
 builder.Services.AddScoped<ImportStep3_GenerateReport>();
+builder.Services.AddScoped<ReconcileQueueJob>();
 
 // Spotify auth + HTTP
 builder.Services.AddScoped<ISpotifyAuthenticator, SpotifyAuthenticator>();
@@ -77,6 +78,7 @@ builder.Services
     {
         options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
         options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
+        options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
         options.Retry.DelayGenerator = args =>
         {
             if (args.Outcome.Result?.Headers.RetryAfter?.Delta is { } delta)
@@ -84,9 +86,31 @@ builder.Services
             return ValueTask.FromResult<TimeSpan?>(null);
         };
     });
+
+// Playlist add/remove are non-idempotent — a retried lost-but-committed POST duplicates tracks.
+// A separate client keeps timeouts and the circuit breaker but never retries writes.
+builder.Services
+    .AddHttpClient("spotify-music-write", (sp, client) =>
+    {
+        var opts = sp.GetRequiredService<IOptions<SpotifyOptions>>().Value;
+        client.BaseAddress = new Uri(opts.ApiBaseUrl);
+    })
+    .AddHttpMessageHandler<SpotifyTokenHandler>()
+    .AddStandardResilienceHandler(options =>
+    {
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
+        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
+        options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
+        options.Retry.ShouldHandle = _ => ValueTask.FromResult(false);
+    });
+
 builder.Services.AddKeyedSingleton<IMusicProvider>("spotify", (sp, _) =>
-    new SpotifyMusicProvider(
-        sp.GetRequiredService<IHttpClientFactory>().CreateClient("spotify-music")));
+{
+    var factory = sp.GetRequiredService<IHttpClientFactory>();
+    return new SpotifyMusicProvider(
+        factory.CreateClient("spotify-music"),
+        factory.CreateClient("spotify-music-write"));
+});
 
 // Tidal auth + HTTP (skip if ApiBaseUrl not configured)
 var tidalConfig = new TidalOptions();
@@ -109,6 +133,7 @@ if (!string.IsNullOrEmpty(tidalConfig.ApiBaseUrl))
         {
             options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
             options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
+            options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
         });
     builder.Services.AddKeyedSingleton<IMusicProvider>("tidal", (sp, _) =>
         new TidalMusicProvider(
@@ -123,12 +148,13 @@ builder.Services
         client.BaseAddress = new Uri(opts.ApiBaseUrl);
     })
     .AddHttpMessageHandler<SpotifyTokenHandler>()
-    .AddStandardResilienceHandler(options =>
-    {
-        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
-        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
-        options.Retry.MaxRetryAttempts = 3;
-    });
+        .AddStandardResilienceHandler(options =>
+        {
+            options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
+            options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
+            options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
+            options.Retry.MaxRetryAttempts = 3;
+        });
 builder.Services.AddKeyedSingleton<ITrackMapper>("spotify", (sp, _) =>
 {
     var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("track-mapper");
@@ -169,8 +195,8 @@ Console.CancelKeyPress += (_, e) =>
 // ── Command tree ──────────────────────────────────────────────
 var rootCommand = new RootCommand("Musync — multi-provider music queue manager");
 
-var dryRunOption = new Option<bool>("--dry-run", "Preview changes without mutating providers") { Recursive = true };
-var limitOption = new Option<int?>("--limit", "Maximum number of items to process") { Recursive = true };
+var dryRunOption = new Option<bool>("--dry-run") { Recursive = true, Description = "Preview changes without mutating providers" };
+var limitOption = new Option<int?>("--limit") { Recursive = true, Description = "Maximum number of items to process" };
 rootCommand.Add(dryRunOption);
 rootCommand.Add(limitOption);
 
@@ -182,16 +208,19 @@ rootCommand.Add(tidalCmd);
 var spotifyQueueAlbums = new Command("queue-albums", "Sync saved albums to the queue playlist");
 spotifyCmd.Add(spotifyQueueAlbums);
 
+var spotifyReconcile = new Command("reconcile-queue", "Remove duplicate tracks from the queue playlist");
+spotifyCmd.Add(spotifyReconcile);
+
 var tidalQueueAlbums = new Command("queue-albums", "Sync saved albums to the queue playlist");
 tidalCmd.Add(tidalQueueAlbums);
 
-var spotifySourceOption = new Option<string>("--source", "Source provider to import from")
+var spotifySourceOption = new Option<string>("--source") { Description = "Source provider to import from" }
     .AcceptOnlyFromAmong("spotify", "tidal");
 var spotifyImport = new Command("import", "Import tracks from another provider");
 spotifyImport.Add(spotifySourceOption);
 spotifyCmd.Add(spotifyImport);
 
-var tidalSourceOption = new Option<string>("--source", "Source provider to import from")
+var tidalSourceOption = new Option<string>("--source") { Description = "Source provider to import from" }
     .AcceptOnlyFromAmong("spotify", "tidal");
 var tidalImport = new Command("import", "Import tracks from another provider");
 tidalImport.Add(tidalSourceOption);
@@ -225,6 +254,15 @@ if (invokedCommand.Name == "queue-albums")
         ? parentCmd.Command.Name
         : throw new InvalidOperationException("queue-albums must be nested under a provider command");
     return await RunQueueAlbumsAsync(providerKey, dryRun, limit, host.Services, cts.Token);
+}
+
+// reconcile-queue: parent command is the provider name
+if (invokedCommand.Name == "reconcile-queue")
+{
+    var providerKey = parseResult.CommandResult.Parent is CommandResult reconcileParent
+        ? reconcileParent.Command.Name
+        : throw new InvalidOperationException("reconcile-queue must be nested under a provider command");
+    return await RunReconcileAsync(providerKey, dryRun, host.Services, cts.Token);
 }
 
 // import: parent command is target provider, --source is the source provider
@@ -297,12 +335,22 @@ static async Task<int> RunQueueAlbumsAsync(
     if (providerKey == "spotify")
     {
         var opts = scope.ServiceProvider.GetRequiredService<IOptions<SpotifyOptions>>().Value;
+        if (string.IsNullOrEmpty(opts.QueuePlaylistId))
+        {
+            await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for sync.");
+            return 1;
+        }
         playlistId = opts.QueuePlaylistId;
         maxParallelism = opts.MaxConcurrentRequests;
     }
     else if (providerKey == "tidal")
     {
         var opts = scope.ServiceProvider.GetRequiredService<IOptions<TidalOptions>>().Value;
+        if (string.IsNullOrEmpty(opts.QueuePlaylistId))
+        {
+            await Console.Error.WriteLineAsync("Tidal:QueuePlaylistId is required for sync.");
+            return 1;
+        }
         playlistId = opts.QueuePlaylistId;
         maxParallelism = opts.MaxConcurrentRequests;
     }
@@ -318,6 +366,60 @@ static async Task<int> RunQueueAlbumsAsync(
     try
     {
         await orchestrator.RunAsync(ctx, ct);
+    }
+    catch (OperationCanceledException)
+    {
+        return 2;
+    }
+    catch (Exception ex)
+    {
+        Log.JobFailed(logger, ex.Message, ex);
+        return 1;
+    }
+
+    return 0;
+}
+
+static async Task<int> RunReconcileAsync(
+    string providerKey,
+    bool dryRun,
+    IServiceProvider services,
+    CancellationToken ct)
+{
+    await using var scope = services.CreateAsyncScope();
+    var provider = scope.ServiceProvider.GetKeyedService<IMusicProvider>(providerKey);
+    if (provider is null)
+    {
+        await Console.Error.WriteLineAsync(
+            $"Provider '{providerKey}' is not configured. Check appsettings.json.");
+        return 1;
+    }
+
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<ReconcileQueueJob>>();
+
+    string playlistId;
+    if (providerKey == "spotify")
+    {
+        var opts = scope.ServiceProvider.GetRequiredService<IOptions<SpotifyOptions>>().Value;
+        if (string.IsNullOrEmpty(opts.QueuePlaylistId))
+        {
+            await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for reconcile-queue.");
+            return 1;
+        }
+        playlistId = opts.QueuePlaylistId;
+    }
+    else
+    {
+        await Console.Error.WriteLineAsync($"reconcile-queue is not supported for provider: {providerKey}");
+        return 1;
+    }
+
+    var job = scope.ServiceProvider.GetRequiredService<ReconcileQueueJob>();
+    var ctx = new ReconcileRunContext(providerKey, provider, playlistId, dryRun);
+
+    try
+    {
+        await job.RunAsync(ctx, ct);
     }
     catch (OperationCanceledException)
     {
@@ -391,9 +493,25 @@ static async Task<int> RunImportAsync(
 
     string playlistId;
     if (targetProviderKey == "spotify")
-        playlistId = scope.ServiceProvider.GetRequiredService<IOptions<SpotifyOptions>>().Value.QueuePlaylistId;
+    {
+        var spotOpts = scope.ServiceProvider.GetRequiredService<IOptions<SpotifyOptions>>().Value;
+        if (string.IsNullOrEmpty(spotOpts.QueuePlaylistId))
+        {
+            await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for import.");
+            return 1;
+        }
+        playlistId = spotOpts.QueuePlaylistId;
+    }
     else
-        playlistId = scope.ServiceProvider.GetRequiredService<IOptions<TidalOptions>>().Value.QueuePlaylistId;
+    {
+        var tidalOpts = scope.ServiceProvider.GetRequiredService<IOptions<TidalOptions>>().Value;
+        if (string.IsNullOrEmpty(tidalOpts.QueuePlaylistId))
+        {
+            await Console.Error.WriteLineAsync("Tidal:QueuePlaylistId is required for import.");
+            return 1;
+        }
+        playlistId = tidalOpts.QueuePlaylistId;
+    }
 
     var ctx = new ImportRunContext(sourceProviderKey, targetProviderKey, sourceProvider, targetProvider, mapper, playlistId, dryRun, limit);
     var orchestrator = new ImportOrchestrator(db, step1, step2, step3, logger);

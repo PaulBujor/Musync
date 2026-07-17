@@ -268,6 +268,105 @@ public sealed class QueueAlbumsOrchestratorTests
     }
 
     [Fact]
+    public async Task RunAsync_TrackInPlaylistButNotInHistory_NotReAdded()
+    {
+        // track-a1 is already in the playlist but has no history row (manual add or wiped ledger).
+        var albums = new List<Album>
+        {
+            new("album-a", "Album A", "Artist A")
+        };
+        var playlistTracks = new List<Track>
+        {
+            new("track-a1", "Track A1", "Artist A", "Album A")
+        };
+
+        var provider = new LocalMockMusicProvider(savedAlbums: albums, playlistTracks: playlistTracks);
+        var sp = BuildTestServices();
+
+        var db = sp.GetRequiredService<AppDbContext>();
+        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
+        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
+
+        var ctx = CreateContext(provider);
+        var orchestrator = new QueueAlbumsOrchestrator(db, step1, step2, step3, logger);
+        await orchestrator.RunAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(2, provider.PlaylistTracks.Count);
+        Assert.Equal(1, provider.PlaylistTracks.Count(t => t.Id == "track-a1"));
+        Assert.Contains(provider.PlaylistTracks, t => t.Id == "track-a2");
+
+        var latest = await GetLatestJobRunAsync(db);
+        Assert.NotNull(latest);
+        Assert.Equal(1, latest.TracksAdded);
+    }
+
+    [Fact]
+    public async Task RunAsync_SameTrackOnTwoAlbums_AddedOnce()
+    {
+        var albums = new List<Album>
+        {
+            new("album-x", "Album X", "Artist X"),
+            new("album-y", "Album Y", "Artist Y")
+        };
+        var albumTracks = new Dictionary<string, List<Track>>
+        {
+            ["album-x"] = [new Track("shared-1", "Shared", "Artist X", "Album X")],
+            ["album-y"] = [new Track("shared-1", "Shared", "Artist Y", "Album Y")]
+        };
+
+        var provider = new LocalMockMusicProvider(savedAlbums: albums, albumTracks: albumTracks);
+        var sp = BuildTestServices();
+
+        var db = sp.GetRequiredService<AppDbContext>();
+        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
+        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
+
+        var ctx = CreateContext(provider);
+        var orchestrator = new QueueAlbumsOrchestrator(db, step1, step2, step3, logger);
+        await orchestrator.RunAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(1, provider.PlaylistTracks.Count(t => t.Id == "shared-1"));
+    }
+
+    [Fact]
+    public async Task RunAsync_RerunAfterLostLedger_DoesNotDuplicate()
+    {
+        // Mimics a run whose Spotify add committed but whose ledger write was lost.
+        var albums = new List<Album>
+        {
+            new("album-a", "Album A", "Artist A")
+        };
+
+        var provider = new LocalMockMusicProvider(savedAlbums: albums);
+        var sp = BuildTestServices();
+
+        var db = sp.GetRequiredService<AppDbContext>();
+        var step1 = sp.GetRequiredService<SyncStep1_SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<SyncStep2_AddNewTracks>();
+        var step3 = sp.GetRequiredService<SyncStep3_GenerateReport>();
+        var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
+
+        var orchestrator = new QueueAlbumsOrchestrator(db, step1, step2, step3, logger);
+
+        await orchestrator.RunAsync(CreateContext(provider), CancellationToken.None);
+        Assert.Equal(2, provider.PlaylistTracks.Count);
+
+        db.TrackHistories.RemoveRange(db.TrackHistories);
+        db.ProcessedAlbums.RemoveRange(db.ProcessedAlbums);
+        await db.SaveChangesAsync();
+
+        await orchestrator.RunAsync(CreateContext(provider), CancellationToken.None);
+
+        Assert.Equal(2, provider.PlaylistTracks.Count);
+        Assert.Equal(1, provider.PlaylistTracks.Count(t => t.Id == "track-a1"));
+        Assert.Equal(1, provider.PlaylistTracks.Count(t => t.Id == "track-a2"));
+    }
+
+    [Fact]
     public async Task RunAsync_LikedTrackInPlaylist_RemovesIt()
     {
         var savedTracks = new List<Track>

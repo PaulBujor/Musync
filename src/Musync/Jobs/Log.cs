@@ -113,4 +113,21 @@ public static partial class Log
     // Deprecated command
     [LoggerMessage(Level = LogLevel.Warning, Message = "Command '{Old}' is deprecated. Use '{New}' instead.")]
     public static partial void DeprecatedCommand(ILogger logger, string old, string @new);
+
+    // Reconcile
+    [LoggerMessage(Level = LogLevel.Information, Message = "Reconciling queue playlist {PlaylistId}")]
+    public static partial void ReconcileStart(ILogger logger, string playlistId);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Found {DuplicateTracks} duplicated tracks ({ExtraCopies} extra copies) in the playlist")]
+    public static partial void ReconcileFoundDuplicates(ILogger logger, int duplicateTracks, int extraCopies);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "[DRY-RUN] Would remove {Count} duplicate copies")]
+    public static partial void DryRunWouldRemoveDuplicates(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Backfilled {Count} track history entries")]
+    public static partial void ReconcileBackfilledHistory(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Queue already has no duplicates")]
+    public static partial void ReconcileNoDuplicates(ILogger logger);
 }

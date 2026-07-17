@@ -30,6 +30,7 @@ public sealed class SyncStep1_SnapshotAndDiff(
         var likedTrackIds = await likedTrackIdsTask;
 
         var currentTrackIds = currentPlaylistTracks.Select(t => t.Id).ToHashSet();
+        ctx.CurrentPlaylistTrackIds = currentTrackIds;
 
         var likedInPlaylist = currentTrackIds.Where(likedTrackIds.Contains).ToList();
         if (likedInPlaylist.Count > 0)
