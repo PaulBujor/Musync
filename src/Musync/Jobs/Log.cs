@@ -77,6 +77,10 @@ public static partial class Log
         Message = "Search failed for source track \"{TrackName}\" by {ArtistName}; will retry next run")]
     public static partial void TrackSearchDeferred(ILogger logger, string trackName, string artistName);
 
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "{Provider} rate limited (HTTP 429) on attempt {Attempt}; waiting {DelaySeconds:F0}s before retrying (Ctrl+C to cancel)")]
+    public static partial void RateLimited(ILogger logger, string provider, int attempt, double delaySeconds);
+
     [LoggerMessage(Level = LogLevel.Information, Message = "No mapped tracks to import")]
     public static partial void NoMappedTracksToImport(ILogger logger);
 

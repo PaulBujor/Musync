@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.CommandLine.Parsing;
+using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -89,6 +90,10 @@ builder.Services.AddScoped<AddToQueue>();
 builder.Services.AddScoped<Musync.Jobs.Import.GenerateReport>();
 builder.Services.AddScoped<ReconcileQueueJob>();
 
+// Resolved after the host is built; the read resilience handlers log rate-limit waits through it.
+ILoggerFactory? resilienceLoggerFactory = null;
+ILogger? ResilienceLogger() => resilienceLoggerFactory?.CreateLogger("Musync.Resilience");
+
 // Spotify auth + HTTP
 var spotifyMaxRetries = builder.Configuration.GetValue("Spotify:MaxRetries", 3);
 builder.Services.AddScoped<ISpotifyAuthenticator, SpotifyAuthenticator>();
@@ -100,7 +105,7 @@ builder.Services
         client.BaseAddress = new Uri(opts.ApiBaseUrl);
     })
     .AddHttpMessageHandler<SpotifyTokenHandler>()
-    .AddStandardResilienceHandler(o => ConfigureReadResilience(o, spotifyMaxRetries));
+    .AddStandardResilienceHandler(o => ConfigureReadResilience(o, spotifyMaxRetries, "Spotify", ResilienceLogger));
 
 // Playlist add/remove are non-idempotent — a retried lost-but-committed POST duplicates tracks.
 // A separate client keeps timeouts and the circuit breaker but never retries writes.
@@ -138,10 +143,11 @@ if (!string.IsNullOrEmpty(tidalConfig.ApiBaseUrl))
                 new MediaTypeWithQualityHeaderValue("application/vnd.api+json"));
         })
         .AddHttpMessageHandler<TidalTokenHandler>()
-        .AddStandardResilienceHandler(o => ConfigureReadResilience(o, tidalConfig.MaxRetries));
+        .AddStandardResilienceHandler(o => ConfigureReadResilience(o, tidalConfig.MaxRetries, "Tidal", ResilienceLogger));
     builder.Services.AddKeyedSingleton<IMusicProvider>(ProviderKeys.Tidal, (sp, _) =>
         new TidalMusicProvider(
-            sp.GetRequiredService<IHttpClientFactory>().CreateClient("tidal-music")));
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient("tidal-music"),
+            sp.GetRequiredService<IOptions<TidalOptions>>().Value.Locale));
 }
 
 // Track mapper — keyed by target provider
@@ -152,7 +158,7 @@ builder.Services
         client.BaseAddress = new Uri(opts.ApiBaseUrl);
     })
     .AddHttpMessageHandler<SpotifyTokenHandler>()
-    .AddStandardResilienceHandler(o => ConfigureReadResilience(o, spotifyMaxRetries));
+    .AddStandardResilienceHandler(o => ConfigureReadResilience(o, spotifyMaxRetries, "Spotify", ResilienceLogger));
 builder.Services.AddKeyedSingleton<ITrackMapper>(ProviderKeys.Spotify, (sp, _) =>
 {
     var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("track-mapper");
@@ -162,6 +168,7 @@ builder.Services.AddKeyedSingleton<ITrackMapper>(ProviderKeys.Spotify, (sp, _) =
 // Tidal is import-source only; there is no track mapper for importing *into* Tidal.
 
 var host = builder.Build();
+resilienceLoggerFactory = host.Services.GetRequiredService<ILoggerFactory>();
 
 using (var scope = host.Services.CreateScope())
 {
@@ -603,13 +610,30 @@ static void ConfigureTimeouts(HttpStandardResilienceOptions options)
     options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
 }
 
-// Reads: retry up to maxRetries, honouring a Retry-After header when present.
-static void ConfigureReadResilience(HttpStandardResilienceOptions options, int maxRetries)
+// Reads: retry up to maxRetries, honouring a Retry-After header when present. No practical overall
+// timeout (1 day) so a long rate-limit backoff can finish — the standard-handler validator rejects
+// an infinite total against a finite attempt, so this is a large finite value rather than infinite.
+// Individual attempts stay bounded, and Ctrl+C cancels the run (its token flows into the retry delay).
+static void ConfigureReadResilience(
+    HttpStandardResilienceOptions options, int maxRetries, string provider, Func<ILogger?> logger)
 {
-    ConfigureTimeouts(options);
+    options.TotalRequestTimeout.Timeout = TimeSpan.FromDays(1);
+    options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
+    options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
     options.Retry.MaxRetryAttempts = maxRetries;
     options.Retry.DelayGenerator = args =>
         ValueTask.FromResult(args.Outcome.Result?.Headers.RetryAfter?.Delta);
+    options.Retry.OnRetry = args =>
+    {
+        if (args.Outcome.Result is { StatusCode: HttpStatusCode.TooManyRequests } response
+            && logger() is { } log)
+        {
+            var delay = response.Headers.RetryAfter?.Delta ?? args.RetryDelay;
+            Log.RateLimited(log, provider, args.AttemptNumber + 1, delay.TotalSeconds);
+        }
+
+        return default;
+    };
 }
 
 // Writes (playlist add/remove): non-idempotent, so keep timeouts + circuit breaker but never retry.

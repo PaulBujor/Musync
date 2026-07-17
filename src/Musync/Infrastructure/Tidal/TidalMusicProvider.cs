@@ -6,11 +6,8 @@ using Musync.Infrastructure.Tidal.Models;
 
 namespace Musync.Infrastructure.Tidal;
 
-public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
+public sealed class TidalMusicProvider(HttpClient http, string locale) : IMusicProvider
 {
-    // Max ids per Tidal filter[id] batch when resolving artist/album names.
-    private const int BatchResolveChunkSize = 20;
-
     public IAsyncEnumerable<Album> GetSavedAlbumsAsync(CancellationToken ct)
     {
         throw new NotSupportedException("Tidal does not support saved album enumeration.");
@@ -28,7 +25,12 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
 
     public async IAsyncEnumerable<Track> GetSavedTracksAsync([EnumeratorCancellation] CancellationToken ct)
     {
-        var url = "/userCollectionTracks/me/relationships/items?include=items";
+        // Nested include pulls the collection's tracks together with their artists and albums, so a
+        // single request per page carries everything needed to build a Track — no follow-up lookups.
+        // Relative to the client's BaseAddress, which ends in ".../v2/" — no leading slash, or the
+        // "/v2" path segment would be dropped.
+        var url = $"userCollectionTracks/me?locale={Uri.EscapeDataString(locale)}"
+                  + "&include=items.artists,items.albums";
 
         while (url is not null)
         {
@@ -36,54 +38,40 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
             response.EnsureSuccessStatusCode();
 
             var page = await response.Content
-                .ReadFromJsonAsync(TidalApiJsonContext.Default.TidalCollectionPage, ct);
+                .ReadFromJsonAsync(TidalApiJsonContext.Default.TidalCollectionResponse, ct);
 
-            if (page?.Included is null || page.Included.Count == 0)
+            var included = page?.Included;
+            if (included is null || included.Count == 0)
                 yield break;
 
-            var artistIds = new HashSet<string>();
-            var albumIds = new HashSet<string>();
-
-            foreach (var track in page.Included)
+            // `included` is heterogeneous — split it by resource type into name lookups.
+            var artistNames = new Dictionary<string, string>();
+            var albumTitles = new Dictionary<string, string>();
+            foreach (var resource in included)
             {
-                if (track.Relationships?.Artists?.Data is { } artistRefs)
-                    foreach (var r in artistRefs)
-                        if (r.Id is not null)
-                            artistIds.Add(r.Id);
+                if (resource.Id is not { } id)
+                    continue;
 
-                if (track.Relationships?.Albums?.Data is { } albumRefs)
-                    foreach (var r in albumRefs)
-                        if (r.Id is not null)
-                            albumIds.Add(r.Id);
+                if (resource.Type == "artists" && resource.Attributes?.Name is { } name)
+                    artistNames[id] = name;
+                else if (resource.Type == "albums" && resource.Attributes?.Title is { } albumTitle)
+                    albumTitles[id] = albumTitle;
             }
 
-            var artistNames = await BatchResolveArtistsAsync(artistIds, ct);
-            var albumTitles = await BatchResolveAlbumsAsync(albumIds, ct);
-
-            foreach (var track in page.Included)
+            foreach (var resource in included)
             {
-                var attrs = track.Attributes;
-                if (attrs is null) continue;
-
-                var artistName = track.Relationships?.Artists?.Data is { Count: > 0 }
-                                 && artistNames.TryGetValue(track.Relationships.Artists.Data[0].Id!, out var name)
-                    ? name
-                    : "";
-
-                var albumTitle = track.Relationships?.Albums?.Data is { Count: > 0 }
-                                 && albumTitles.TryGetValue(track.Relationships.Albums.Data[0].Id!, out var title)
-                    ? title
-                    : "";
+                if (resource.Type != "tracks" || resource.Attributes is not { } attrs)
+                    continue;
 
                 yield return new Track(
-                    track.Id ?? "",
+                    resource.Id ?? "",
                     attrs.Title ?? "",
-                    artistName,
-                    albumTitle,
+                    ResolveName(resource.Relationships?.Artists, artistNames),
+                    ResolveName(resource.Relationships?.Albums, albumTitles),
                     attrs.Isrc);
             }
 
-            url = page.Links?.Next;
+            url = page!.Links?.Next;
         }
     }
 
@@ -97,59 +85,14 @@ public sealed class TidalMusicProvider(HttpClient http) : IMusicProvider
         throw new NotSupportedException("Tidal playlist modification is not yet supported.");
     }
 
-    private async Task<Dictionary<string, string>> BatchResolveArtistsAsync(
-        HashSet<string> ids, CancellationToken ct)
+    // First related resource's resolved name, or "" when the relationship or lookup is missing.
+    private static string ResolveName(TidalRelationshipData? relationship, Dictionary<string, string> names)
     {
-        var result = new Dictionary<string, string>();
-        var idList = ids.ToList();
+        if (relationship?.Data is { Count: > 0 } data
+            && data[0].Id is { } id
+            && names.TryGetValue(id, out var name))
+            return name;
 
-        for (var i = 0; i < idList.Count; i += BatchResolveChunkSize)
-        {
-            var batch = idList.Skip(i).Take(BatchResolveChunkSize);
-            var filter = string.Join(",", batch);
-            var url = $"/artists?filter[id]={filter}";
-
-            var response = await http.GetAsync(url, ct);
-            if (!response.IsSuccessStatusCode) continue;
-
-            var page = await response.Content
-                .ReadFromJsonAsync(TidalApiJsonContext.Default.TidalArtistsPage, ct);
-
-            if (page?.Included is null) continue;
-
-            foreach (var artist in page.Included)
-                if (artist.Id is not null && artist.Attributes?.Name is not null)
-                    result[artist.Id] = artist.Attributes.Name;
-        }
-
-        return result;
-    }
-
-    private async Task<Dictionary<string, string>> BatchResolveAlbumsAsync(
-        HashSet<string> ids, CancellationToken ct)
-    {
-        var result = new Dictionary<string, string>();
-        var idList = ids.ToList();
-
-        for (var i = 0; i < idList.Count; i += BatchResolveChunkSize)
-        {
-            var batch = idList.Skip(i).Take(BatchResolveChunkSize);
-            var filter = string.Join(",", batch);
-            var url = $"/albums?filter[id]={filter}";
-
-            var response = await http.GetAsync(url, ct);
-            if (!response.IsSuccessStatusCode) continue;
-
-            var page = await response.Content
-                .ReadFromJsonAsync(TidalApiJsonContext.Default.TidalAlbumsPage, ct);
-
-            if (page?.Included is null) continue;
-
-            foreach (var album in page.Included)
-                if (album.Id is not null && album.Attributes?.Title is not null)
-                    result[album.Id] = album.Attributes.Title;
-        }
-
-        return result;
+        return "";
     }
 }
