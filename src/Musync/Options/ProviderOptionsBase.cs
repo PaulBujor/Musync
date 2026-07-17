@@ -10,6 +10,5 @@ public abstract record ProviderOptionsBase
     [Required] public string AuthUrl { get; init; } = "";
     [Required] public string TokenUrl { get; init; } = "";
     [Required] public string Scopes { get; init; } = "";
-    public string ClientSecret { get; init; } = "";
     [Range(1, 10)] public int MaxRetries { get; init; } = 3;
 }

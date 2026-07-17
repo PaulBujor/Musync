@@ -33,9 +33,10 @@ Fill in your credentials:
 
 ```env
 Spotify__ClientId=your-client-id
-Spotify__ClientSecret=your-client-secret
 Spotify__QueuePlaylistId=your-playlist-id
 ```
+
+Musync authenticates as a PKCE public client, so no client secret is required.
 
 ### 2. Run
 
@@ -172,7 +173,6 @@ machine (or to cloud storage) to move your setup — re-authenticate on the new 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `ClientId` | — | Spotify app client ID |
-| `ClientSecret` | — | Spotify app client secret |
 | `QueuePlaylistId` | — | Target playlist ID |
 | `RedirectUri` | `http://127.0.0.1:5000/callback` | OAuth redirect URI |
 | `ApiBaseUrl` | `https://api.spotify.com/v1/` | Spotify API base URL |
@@ -190,7 +190,6 @@ queue-albums or import *target*.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `ClientId` | — | Tidal app client ID |
-| `ClientSecret` | — | Tidal app client secret |
 | `RedirectUri` | `http://127.0.0.1:5000/callback` | OAuth redirect URI |
 | `ApiBaseUrl` | `https://openapi.tidal.com/v2` | Tidal v2 API base URL. Leave empty to disable Tidal entirely |
 | `AuthUrl` | `https://login.tidal.com/authorize` | OAuth authorisation endpoint |
