@@ -10,7 +10,8 @@ public sealed class FakeTokenHandler(
     ILogger logger,
     IAuthenticator authenticator) : TokenHandlerBase(scopeFactory, logger, authenticator)
 {
-    protected override string TokenUrl => "https://example.com/token";
+    private const string TokenUrl = "https://example.com/token";
+
     protected override string ProviderName => "test";
 
     protected override HttpRequestMessage CreateRefreshRequest(string refreshToken)

@@ -41,9 +41,6 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Information, Message = "Marking {TrackCount} tracks as manually removed")]
     public static partial void MarkingManualRemovals(ILogger logger, int trackCount);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Rate limited. Retrying after {Delay}")]
-    public static partial void RateLimited(ILogger logger, TimeSpan delay);
-
     [LoggerMessage(Level = LogLevel.Error, Message = "Job run failed: {Message}")]
     public static partial void JobFailed(ILogger logger, string message, Exception exception);
 

@@ -19,7 +19,6 @@ public sealed class SpotifyTokenHandler(
     private const string TokenUrlConst = "https://accounts.spotify.com/api/token";
     private readonly SpotifyOptions _options = options.Value;
 
-    protected override string TokenUrl => TokenUrlConst;
     protected override string ProviderName => "spotify";
 
     protected override HttpRequestMessage CreateRefreshRequest(string refreshToken)
