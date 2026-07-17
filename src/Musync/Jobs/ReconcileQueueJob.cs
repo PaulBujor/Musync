@@ -30,47 +30,71 @@ public sealed class ReconcileQueueJob(
         using var _ = logger.BeginScope(new { JobRunId = jobRun.Id.ToString() });
         Log.ReconcileStart(logger, ctx.PlaylistId);
 
-        var playlistTrackIds = new List<string>();
-        await foreach (var track in ctx.Target.GetPlaylistTracksAsync(ctx.PlaylistId, ct))
-            playlistTrackIds.Add(track.Id);
-
-        var duplicatedIds = playlistTrackIds
-            .GroupBy(id => id)
-            .Where(g => g.Count() > 1)
-            .Select(g => g.Key)
-            .ToList();
-        var extraCopies = playlistTrackIds.Count - playlistTrackIds.Distinct().Count();
-
-        if (duplicatedIds.Count == 0)
+        async Task FinalizeAsync(string status, CancellationToken token, string? errorMessage = null)
         {
-            Log.ReconcileNoDuplicates(logger);
+            jobRun.Status = status;
+            jobRun.FinishedAt = DateTime.UtcNow;
+            if (errorMessage is not null)
+                jobRun.ErrorMessage = errorMessage;
+
+            if (!ctx.DryRun)
+                await db.SaveChangesAsync(token);
         }
-        else
-        {
-            Log.ReconcileFoundDuplicates(logger, duplicatedIds.Count, extraCopies);
 
-            if (ctx.DryRun)
+        try
+        {
+            var playlistTrackIds = new List<string>();
+            await foreach (var track in ctx.Target.GetPlaylistTracksAsync(ctx.PlaylistId, ct))
+                playlistTrackIds.Add(track.Id);
+
+            var distinctIds = playlistTrackIds.Distinct().ToList();
+            var duplicatedIds = playlistTrackIds
+                .GroupBy(id => id)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToList();
+            var extraCopies = playlistTrackIds.Count - distinctIds.Count;
+
+            if (duplicatedIds.Count == 0)
             {
-                Log.DryRunWouldRemoveDuplicates(logger, extraCopies);
+                Log.ReconcileNoDuplicates(logger);
             }
             else
             {
-                // Spotify's delete removes every occurrence of a uri, so drop all copies then re-add one.
-                await ctx.Target.RemoveTracksFromPlaylistAsync(ctx.PlaylistId, duplicatedIds, ct);
-                await ctx.Target.AddTracksToPlaylistAsync(ctx.PlaylistId, duplicatedIds, ct);
+                Log.ReconcileFoundDuplicates(logger, duplicatedIds.Count, extraCopies);
+
+                if (ctx.DryRun)
+                {
+                    Log.DryRunWouldRemoveDuplicates(logger, extraCopies);
+                }
+                else
+                {
+                    // Spotify's delete drops every occurrence of a uri, so remove all copies then re-add one.
+                    // The two writes are not atomic — an interruption between them can leave copies missing.
+                    await ctx.Target.RemoveTracksFromPlaylistAsync(ctx.PlaylistId, duplicatedIds, ct);
+                    await ctx.Target.AddTracksToPlaylistAsync(ctx.PlaylistId, duplicatedIds, ct);
+                }
             }
+
+            var backfilled = await BackfillHistoryAsync(ctx, jobRun.Id, distinctIds, ct);
+
+            jobRun.TracksRemovedManual = extraCopies;
+            jobRun.TracksAdded = backfilled;
+            jobRun.QueueSizeAfter = distinctIds.Count;
+
+            await FinalizeAsync(ctx.DryRun ? "dry-run" : "succeeded", ct);
         }
-
-        var backfilled = await BackfillHistoryAsync(ctx, jobRun.Id, playlistTrackIds.Distinct().ToList(), ct);
-
-        jobRun.TracksRemovedManual = extraCopies;
-        jobRun.TracksAdded = backfilled;
-        jobRun.QueueSizeAfter = playlistTrackIds.Distinct().Count();
-        jobRun.Status = ctx.DryRun ? "dry-run" : "succeeded";
-        jobRun.FinishedAt = DateTime.UtcNow;
-
-        if (!ctx.DryRun)
-            await db.SaveChangesAsync(ct);
+        catch (OperationCanceledException)
+        {
+            await FinalizeAsync("partial", CancellationToken.None, "Cancelled by user");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.JobFailed(logger, ex.Message, ex);
+            await FinalizeAsync("failed", CancellationToken.None, ex.Message);
+            throw;
+        }
     }
 
     private async Task<int> BackfillHistoryAsync(

@@ -172,12 +172,32 @@ using (var scope = host.Services.CreateScope())
 
     if (provider == "Sqlite")
     {
+        // EnsureCreated skips schema changes on an existing file, so enforce the active-history
+        // uniqueness invariant directly: one active row per track, backed by a unique index.
         db.Database.EnsureCreated();
         using var connection = db.Database.GetDbConnection();
         connection.Open();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "PRAGMA journal_mode=WAL;";
-        cmd.ExecuteScalar();
+        cmd.CommandText =
+            """
+            PRAGMA journal_mode=WAL;
+
+            DELETE FROM "TrackHistories"
+            WHERE "RemovedAt" IS NULL
+              AND "Id" NOT IN (
+                  SELECT MIN("Id")
+                  FROM "TrackHistories"
+                  WHERE "RemovedAt" IS NULL
+                  GROUP BY "Provider", "TrackId"
+              );
+
+            DROP INDEX IF EXISTS "IX_TrackHistories_Provider_TrackId";
+
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_TrackHistories_Provider_TrackId"
+            ON "TrackHistories" ("Provider", "TrackId")
+            WHERE "RemovedAt" IS NULL;
+            """;
+        cmd.ExecuteNonQuery();
     }
     else
     {
@@ -395,8 +415,6 @@ static async Task<int> RunReconcileAsync(
         return 1;
     }
 
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<ReconcileQueueJob>>();
-
     string playlistId;
     if (providerKey == "spotify")
     {
@@ -425,9 +443,9 @@ static async Task<int> RunReconcileAsync(
     {
         return 2;
     }
-    catch (Exception ex)
+    catch (Exception)
     {
-        Log.JobFailed(logger, ex.Message, ex);
+        // RunAsync already logged the failure and marked the JobRun failed.
         return 1;
     }
 
