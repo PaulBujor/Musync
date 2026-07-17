@@ -40,46 +40,75 @@ Spotify__QueuePlaylistId=your-playlist-id
 ### 2. Run
 
 ```bash
-# Direct
-dotnet run --project src/Musync
+# Direct (pass the command after --)
+dotnet run --project src/Musync -- spotify queue-albums
 
 # Docker
 docker compose up
 ```
 
-On first run, your browser opens for Spotify OAuth. After authorising, the tool proceeds with the sync.
+On first run, your browser opens for OAuth. After authorising, the tool proceeds with the sync.
 
 ## Commands
 
-### `sync` (default)
+The CLI is organised by provider. Each provider supports `queue-albums` (sync saved albums to its queue playlist) and `import` (pull tracks from another provider).
 
-Syncs your saved Spotify albums into the configured queue playlist.
+Global options (available on any command):
+
+| Option | Description |
+|--------|-------------|
+| `--dry-run` | Preview changes without mutating any provider |
+| `--limit <n>` | Cap the number of items processed |
+
+### `<provider> queue-albums`
+
+Syncs your saved albums on that provider into its configured queue playlist.
 
 ```bash
-dotnet run --project src/Musync sync
+dotnet run --project src/Musync -- spotify queue-albums
+dotnet run --project src/Musync -- tidal queue-albums
 ```
 
-Runs four steps: snapshot & diff, add new tracks, (transparent token refresh), report.
+Runs three steps: snapshot & diff, add new tracks, report. (Token refresh happens transparently in the HTTP pipeline.)
 
-### `import-tidal`
+### `<provider> import --source <provider>`
 
-Imports a Tidal playlist into your Spotify queue playlist.
+Imports tracks from a source provider into the target provider's queue playlist. Source and target must differ.
 
 ```bash
-dotnet run --project src/Musync import-tidal <playlist-url>
-```
-
-Example:
-```bash
-dotnet run --project src/Musync import-tidal https://tidal.com/browse/playlist/abc123
+# Import your Tidal collection into the Spotify queue
+dotnet run --project src/Musync -- spotify import --source tidal
 ```
 
 This command:
-1. Authenticates with Tidal (PKCE OAuth, browser opens on first run).
-2. Fetches all tracks from the Tidal playlist.
-3. Searches for each track in Spotify's catalog (by ISRC, then by name+artist).
-4. Adds matched tracks to the queue playlist.
+1. Authenticates with the source provider (PKCE OAuth, browser opens on first run).
+2. Fetches tracks from the source.
+3. Searches for each track in the target's catalog (by ISRC, then by name+artist).
+4. Adds matched tracks to the target's queue playlist.
 5. Generates a report of imported, skipped, and unmatched tracks.
+
+### `spotify reconcile-queue`
+
+Removes duplicate tracks from the Spotify queue playlist (keeping one copy of each) and backfills
+the track-history ledger so future syncs stay consistent. Use `--dry-run` to preview.
+
+```bash
+dotnet run --project src/Musync -- spotify reconcile-queue --dry-run
+dotnet run --project src/Musync -- spotify reconcile-queue
+```
+
+### Deprecated aliases
+
+`sync` (→ `spotify queue-albums`) and `import-tidal` (→ `spotify import --source tidal`) still work but log a deprecation warning and exit with code `3`.
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Error or misconfiguration |
+| `2` | Cancelled (Ctrl+C / SIGTERM) |
+| `3` | A deprecated alias succeeded |
 
 ## Authentication
 
@@ -87,21 +116,20 @@ First run uses PKCE OAuth: a browser window opens, you authorise the app, and th
 
 ## How It Works
 
-### Sync command
+### `queue-albums` command
 
-Each sync run executes four steps:
+Each run executes three steps (token refresh happens transparently in the HTTP pipeline):
 
 1. **Snapshot & diff** — fetches the current playlist and your liked tracks. Liked tracks in the queue are removed; tracks removed manually from the queue since the last run are marked as such in history.
 2. **Add new tracks** — iterates saved albums, skips already-processed ones, fetches track lists for new albums. Tracks that are liked or have been seen before are skipped; the rest are added to the queue.
-3. *(transparent)* — Spotify token refresh happens automatically in the HTTP pipeline.
-4. **Report** — logs a summary to stdout.
+3. **Report** — logs a summary to stdout.
 
-### Import-tidal command
+### `import` command
 
 Runs three steps:
 
-1. **Fetch & map** — authenticates with Tidal, fetches the playlist, searches each track in Spotify's catalog via `SpotifySearchMapper`.
-2. **Add to queue** — adds matched tracks to the queue playlist using the same dedup logic as sync.
+1. **Fetch & map** — authenticates with the source provider, fetches its tracks, and searches each in the target provider's catalog via the target's `ITrackMapper` (e.g. `SpotifySearchMapper`).
+2. **Add to queue** — adds matched tracks to the target's queue playlist using the same dedup logic as `queue-albums`.
 3. **Generate report** — summarises imported, skipped, and unmatched tracks.
 
 ### Example Output
@@ -141,6 +169,8 @@ For portable use, set `ConnectionStrings__Sqlite` to a path inside your Google D
 | `ClientId` | — | Spotify app client ID |
 | `ClientSecret` | — | Spotify app client secret |
 | `QueuePlaylistId` | — | Target playlist ID |
+| `RedirectUri` | `http://127.0.0.1:5000/callback` | OAuth redirect URI |
+| `ApiBaseUrl` | `https://api.spotify.com/v1/` | Spotify API base URL |
 | `AuthUrl` | `https://accounts.spotify.com/authorize` | OAuth authorisation endpoint |
 | `TokenUrl` | `https://accounts.spotify.com/api/token` | OAuth token endpoint |
 | `Scopes` | `user-library-read playlist-modify-public ...` | OAuth scopes |
@@ -154,10 +184,14 @@ For portable use, set `ConnectionStrings__Sqlite` to a path inside your Google D
 |-----|---------|-------------|
 | `ClientId` | — | Tidal app client ID |
 | `ClientSecret` | — | Tidal app client secret |
+| `QueuePlaylistId` | — | Target playlist ID (for `tidal queue-albums` / imports into Tidal) |
+| `RedirectUri` | `http://127.0.0.1:5000/callback` | OAuth redirect URI |
+| `ApiBaseUrl` | `https://openapi.tidal.com/v2` | Tidal v2 API base URL. Leave empty to disable Tidal entirely |
 | `AuthUrl` | `https://login.tidal.com/authorize` | OAuth authorisation endpoint |
 | `TokenUrl` | `https://auth.tidal.com/v1/oauth2/token` | OAuth token endpoint |
-| `Scopes` | `user.read user_collection.read` | OAuth scopes |
+| `Scopes` | `collection.read` | OAuth scopes |
 | `MaxRetries` | `3` | HTTP retry count |
+| `MaxConcurrentRequests` | `3` | Parallel album track fetches |
 
 ## Project Structure
 
@@ -172,15 +206,14 @@ Musync.slnx
 │   │   └── Interfaces/       # IMusicProvider, IAuthenticator, ITrackMapper, etc.
 │   ├── Infrastructure/
 │   │   ├── Auth/             # Shared PKCE authenticator & token handler bases
-│   │   ├── Mapping/          # SpotifySearchMapper (ISRC + by-name fallback)
-│   │   ├── Spotify/          # Spotify API client, auth, token handler, models
-│   │   ├── Tidal/            # Tidal API client, auth, token handler, models
-│   │   └── Persistence/      # EF Core AppDbContext, migrations, repos
-│   ├── Jobs/                 # Orchestrators + step classes (sync, import-tidal)
+│   │   ├── Spotify/          # Spotify client, auth, token handler, models, SpotifySearchMapper
+│   │   ├── Tidal/            # Tidal client, auth, token handler, models, TidalSearchMapper
+│   │   └── Persistence/      # EF Core AppDbContext
+│   ├── Jobs/                 # QueueAlbumsOrchestrator, ImportOrchestrator + numbered step classes
 │   └── Migrations/           # EF Core migrations
 └── tests/Musync.Tests/
     ├── Fakes/                # LocalMockMusicProvider, LocalMockTrackMapper
-    └── Jobs/                 # Unit tests (sync + import-tidal)
+    └── Jobs/                 # Unit tests (queue-albums + import orchestrators)
 ```
 
 ## Testing
