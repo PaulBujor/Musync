@@ -11,9 +11,9 @@ public sealed class ProcessedAlbum
     [DatabaseGenerated(DatabaseGeneratedOption.None)]
     public Guid Id { get; set; }
 
-    [Required] [MaxLength(50)] public string Provider { get; set; } = "";
+    [Required][MaxLength(50)] public string Provider { get; set; } = "";
 
-    [Required] [MaxLength(256)] public string AlbumId { get; set; } = "";
+    [Required][MaxLength(256)] public string AlbumId { get; set; } = "";
 
     [MaxLength(500)] public string AlbumName { get; set; } = "";
 

@@ -11,13 +11,13 @@ public sealed class TrackMapping
     [DatabaseGenerated(DatabaseGeneratedOption.None)]
     public Guid Id { get; set; }
 
-    [Required] [MaxLength(50)] public string SourceProvider { get; set; } = "";
+    [Required][MaxLength(50)] public string SourceProvider { get; set; } = "";
 
-    [Required] [MaxLength(256)] public string SourceTrackId { get; set; } = "";
+    [Required][MaxLength(256)] public string SourceTrackId { get; set; } = "";
 
-    [Required] [MaxLength(50)] public string TargetProvider { get; set; } = "";
+    [Required][MaxLength(50)] public string TargetProvider { get; set; } = "";
 
-    [Required] [MaxLength(256)] public string TargetTrackId { get; set; } = "";
+    [Required][MaxLength(256)] public string TargetTrackId { get; set; } = "";
 
     [MaxLength(50)] public string Isrc { get; set; } = "";
 

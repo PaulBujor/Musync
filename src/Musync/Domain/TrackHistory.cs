@@ -14,9 +14,9 @@ public sealed class TrackHistory
 
     public Guid JobRunId { get; set; }
 
-    [Required] [MaxLength(50)] public string Provider { get; set; } = "";
+    [Required][MaxLength(50)] public string Provider { get; set; } = "";
 
-    [Required] [MaxLength(256)] public string TrackId { get; set; } = "";
+    [Required][MaxLength(256)] public string TrackId { get; set; } = "";
 
     [MaxLength(500)] public string TrackName { get; set; } = "";
 

@@ -16,7 +16,7 @@ public sealed class RefreshToken
     [MaxLength(4000)]
     public string Token { get; set; } = "";
 
-    [Required] [MaxLength(50)] public string Provider { get; set; } = "";
+    [Required][MaxLength(50)] public string Provider { get; set; } = "";
 
     public DateTime UpdatedAt { get; set; }
 }
