@@ -144,10 +144,28 @@ if (!string.IsNullOrEmpty(tidalConfig.ApiBaseUrl))
         })
         .AddHttpMessageHandler<TidalTokenHandler>()
         .AddStandardResilienceHandler(o => ConfigureReadResilience(o, tidalConfig.MaxRetries, "Tidal", ResilienceLogger));
+
+    // Playlist add/remove are non-idempotent — a retried lost-but-committed write duplicates tracks.
+    // A separate client keeps timeouts and the circuit breaker but never retries writes.
+    builder.Services
+        .AddHttpClient("tidal-music-write", (sp, client) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<TidalOptions>>().Value;
+            client.BaseAddress = new Uri(opts.ApiBaseUrl);
+            client.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("application/vnd.api+json"));
+        })
+        .AddHttpMessageHandler<TidalTokenHandler>()
+        .AddStandardResilienceHandler(ConfigureWriteResilience);
+
     builder.Services.AddKeyedSingleton<IMusicProvider>(ProviderKeys.Tidal, (sp, _) =>
-        new TidalMusicProvider(
-            sp.GetRequiredService<IHttpClientFactory>().CreateClient("tidal-music"),
-            sp.GetRequiredService<IOptions<TidalOptions>>().Value.Locale));
+    {
+        var factory = sp.GetRequiredService<IHttpClientFactory>();
+        return new TidalMusicProvider(
+            factory.CreateClient("tidal-music"),
+            factory.CreateClient("tidal-music-write"),
+            sp.GetRequiredService<IOptions<TidalOptions>>().Value.Locale);
+    });
 }
 
 // Track mapper — keyed by target provider
@@ -355,30 +373,57 @@ static async Task<int> RunQueueAlbumsAsync(
     IServiceProvider services,
     CancellationToken ct)
 {
-    if (providerKey != ProviderKeys.Spotify)
-    {
-        await Console.Error.WriteLineAsync(
-            "queue-albums is only supported for Spotify. Tidal is import-source only — use 'spotify import --source tidal'.");
-        return 1;
-    }
-
     await using var scope = services.CreateAsyncScope();
 
-    // Validate options before the provider is built (its HTTP pipeline reads them too).
-    var (opts, optsError) = TryResolveSpotifyOptions(scope.ServiceProvider);
-    if (opts is null)
+    // Validate options before the provider is built (its HTTP pipeline reads them too). Both
+    // providers expose QueuePlaylistId + MaxConcurrentRequests; resolve them per provider key.
+    string queuePlaylistId;
+    int maxConcurrency;
+    switch (providerKey)
     {
-        await Console.Error.WriteLineAsync(optsError);
+        case ProviderKeys.Spotify:
+            {
+                var (opts, optsError) = TryResolveSpotifyOptions(scope.ServiceProvider);
+                if (opts is null)
+                {
+                    await Console.Error.WriteLineAsync(optsError);
+                    return 1;
+                }
+
+                (queuePlaylistId, maxConcurrency) = (opts.QueuePlaylistId, opts.MaxConcurrentRequests);
+                break;
+            }
+        case ProviderKeys.Tidal:
+            {
+                var (opts, optsError) = TryResolveTidalOptions(scope.ServiceProvider);
+                if (opts is null)
+                {
+                    await Console.Error.WriteLineAsync(optsError);
+                    return 1;
+                }
+
+                (queuePlaylistId, maxConcurrency) = (opts.QueuePlaylistId, opts.MaxConcurrentRequests);
+                break;
+            }
+        default:
+            await Console.Error.WriteLineAsync($"queue-albums is not supported for provider '{providerKey}'.");
+            return 1;
+    }
+
+    if (string.IsNullOrEmpty(queuePlaylistId))
+    {
+        var section = char.ToUpperInvariant(providerKey[0]) + providerKey[1..];
+        await Console.Error.WriteLineAsync($"{section}:QueuePlaylistId is required for queue-albums.");
         return 1;
     }
 
-    if (string.IsNullOrEmpty(opts.QueuePlaylistId))
+    var (provider, providerError) = TryResolveProvider(scope.ServiceProvider, providerKey);
+    if (providerError is not null)
     {
-        await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for sync.");
+        await Console.Error.WriteLineAsync(providerError);
         return 1;
     }
 
-    var provider = scope.ServiceProvider.GetKeyedService<IMusicProvider>(providerKey);
     if (provider is null)
     {
         await Console.Error.WriteLineAsync(
@@ -390,7 +435,7 @@ static async Task<int> RunQueueAlbumsAsync(
     var orchestrator = scope.ServiceProvider.GetRequiredService<QueueAlbumsOrchestrator>();
 
     var ctx = new SyncRunContext(
-        providerKey, provider, opts.QueuePlaylistId, opts.MaxConcurrentRequests, dryRun, limit);
+        providerKey, provider, queuePlaylistId, maxConcurrency, dryRun, limit);
 
     try
     {
@@ -586,6 +631,18 @@ static (SpotifyOptions? Options, string? Error) TryResolveSpotifyOptions(IServic
     catch (OptionsValidationException ex)
     {
         return (null, $"Invalid Spotify configuration: {string.Join("; ", ex.Failures)}");
+    }
+}
+
+static (TidalOptions? Options, string? Error) TryResolveTidalOptions(IServiceProvider services)
+{
+    try
+    {
+        return (services.GetRequiredService<IOptions<TidalOptions>>().Value, null);
+    }
+    catch (OptionsValidationException ex)
+    {
+        return (null, $"Invalid Tidal configuration: {string.Join("; ", ex.Failures)}");
     }
 }
 
