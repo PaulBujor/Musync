@@ -1,6 +1,5 @@
 using System.CommandLine;
 using System.CommandLine.Parsing;
-using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Musync;
 using Musync.Domain.Interfaces;
+using Musync.Infrastructure.Http;
 using Musync.Infrastructure.Persistence;
 using Musync.Infrastructure.Spotify;
 using Musync.Infrastructure.Tidal;
@@ -105,10 +105,10 @@ builder.Services
         client.BaseAddress = new Uri(opts.ApiBaseUrl);
     })
     .AddHttpMessageHandler<SpotifyTokenHandler>()
-    .AddStandardResilienceHandler(o => ConfigureReadResilience(o, spotifyMaxRetries, "Spotify", ResilienceLogger));
+    .AddStandardResilienceHandler(o => HttpResilience.ConfigureRead(o, spotifyMaxRetries, "Spotify", ResilienceLogger));
 
 // Playlist add/remove are non-idempotent — a retried lost-but-committed POST duplicates tracks.
-// A separate client keeps timeouts and the circuit breaker but never retries writes.
+// A separate client retries only 429 (safe: rejected before processing), never 5xx/network/timeout.
 builder.Services
     .AddHttpClient("spotify-music-write", (sp, client) =>
     {
@@ -116,7 +116,7 @@ builder.Services
         client.BaseAddress = new Uri(opts.ApiBaseUrl);
     })
     .AddHttpMessageHandler<SpotifyTokenHandler>()
-    .AddStandardResilienceHandler(ConfigureWriteResilience);
+    .AddStandardResilienceHandler(o => HttpResilience.ConfigureWrite(o, spotifyMaxRetries, "Spotify", ResilienceLogger));
 
 builder.Services.AddKeyedSingleton<IMusicProvider>(ProviderKeys.Spotify, (sp, _) =>
 {
@@ -143,11 +143,29 @@ if (!string.IsNullOrEmpty(tidalConfig.ApiBaseUrl))
                 new MediaTypeWithQualityHeaderValue("application/vnd.api+json"));
         })
         .AddHttpMessageHandler<TidalTokenHandler>()
-        .AddStandardResilienceHandler(o => ConfigureReadResilience(o, tidalConfig.MaxRetries, "Tidal", ResilienceLogger));
+        .AddStandardResilienceHandler(o => HttpResilience.ConfigureRead(o, tidalConfig.MaxRetries, "Tidal", ResilienceLogger));
+
+    // Playlist add/remove are non-idempotent — a retried lost-but-committed write duplicates tracks.
+    // A separate client retries only 429 (safe: rejected before processing), never 5xx/network/timeout.
+    builder.Services
+        .AddHttpClient("tidal-music-write", (sp, client) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<TidalOptions>>().Value;
+            client.BaseAddress = new Uri(opts.ApiBaseUrl);
+            client.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("application/vnd.api+json"));
+        })
+        .AddHttpMessageHandler<TidalTokenHandler>()
+        .AddStandardResilienceHandler(o => HttpResilience.ConfigureWrite(o, tidalConfig.MaxRetries, "Tidal", ResilienceLogger));
+
     builder.Services.AddKeyedSingleton<IMusicProvider>(ProviderKeys.Tidal, (sp, _) =>
-        new TidalMusicProvider(
-            sp.GetRequiredService<IHttpClientFactory>().CreateClient("tidal-music"),
-            sp.GetRequiredService<IOptions<TidalOptions>>().Value.Locale));
+    {
+        var factory = sp.GetRequiredService<IHttpClientFactory>();
+        return new TidalMusicProvider(
+            factory.CreateClient("tidal-music"),
+            factory.CreateClient("tidal-music-write"),
+            sp.GetRequiredService<IOptions<TidalOptions>>().Value.Locale);
+    });
 }
 
 // Track mapper — keyed by target provider
@@ -158,7 +176,7 @@ builder.Services
         client.BaseAddress = new Uri(opts.ApiBaseUrl);
     })
     .AddHttpMessageHandler<SpotifyTokenHandler>()
-    .AddStandardResilienceHandler(o => ConfigureReadResilience(o, spotifyMaxRetries, "Spotify", ResilienceLogger));
+    .AddStandardResilienceHandler(o => HttpResilience.ConfigureRead(o, spotifyMaxRetries, "Spotify", ResilienceLogger));
 builder.Services.AddKeyedSingleton<ITrackMapper>(ProviderKeys.Spotify, (sp, _) =>
 {
     var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("track-mapper");
@@ -265,6 +283,12 @@ var tidalImport = new Command("import", "Import tracks from another provider");
 tidalImport.Add(tidalSourceOption);
 tidalCmd.Add(tidalImport);
 
+const string logoutDescription = "Delete this provider's stored auth tokens (forces re-authentication next run)";
+var spotifyLogout = new Command("logout", logoutDescription);
+spotifyCmd.Add(spotifyLogout);
+var tidalLogout = new Command("logout", logoutDescription);
+tidalCmd.Add(tidalLogout);
+
 // Deprecated aliases
 var syncCommand = new Command("sync", "[Deprecated] Use 'spotify queue-albums' instead");
 rootCommand.Add(syncCommand);
@@ -302,6 +326,15 @@ if (invokedCommand.Name == "reconcile-queue")
         ? reconcileParent.Command.Name
         : throw new InvalidOperationException("reconcile-queue must be nested under a provider command");
     return await RunReconcileAsync(providerKey, dryRun, host.Services, cts.Token);
+}
+
+// logout: parent command is the provider name
+if (invokedCommand.Name == "logout")
+{
+    var providerKey = parseResult.CommandResult.Parent is CommandResult logoutParent
+        ? logoutParent.Command.Name
+        : throw new InvalidOperationException("logout must be nested under a provider command");
+    return await RunLogoutAsync(providerKey, dryRun, host.Services, cts.Token);
 }
 
 // import: parent command is target provider, --source is the source provider
@@ -355,30 +388,57 @@ static async Task<int> RunQueueAlbumsAsync(
     IServiceProvider services,
     CancellationToken ct)
 {
-    if (providerKey != ProviderKeys.Spotify)
-    {
-        await Console.Error.WriteLineAsync(
-            "queue-albums is only supported for Spotify. Tidal is import-source only — use 'spotify import --source tidal'.");
-        return 1;
-    }
-
     await using var scope = services.CreateAsyncScope();
 
-    // Validate options before the provider is built (its HTTP pipeline reads them too).
-    var (opts, optsError) = TryResolveSpotifyOptions(scope.ServiceProvider);
-    if (opts is null)
+    // Validate options before the provider is built (its HTTP pipeline reads them too). Both
+    // providers expose QueuePlaylistId + MaxConcurrentRequests; resolve them per provider key.
+    string queuePlaylistId;
+    int maxConcurrency;
+    switch (providerKey)
     {
-        await Console.Error.WriteLineAsync(optsError);
+        case ProviderKeys.Spotify:
+            {
+                var (opts, optsError) = TryResolveSpotifyOptions(scope.ServiceProvider);
+                if (opts is null)
+                {
+                    await Console.Error.WriteLineAsync(optsError);
+                    return 1;
+                }
+
+                (queuePlaylistId, maxConcurrency) = (opts.QueuePlaylistId, opts.MaxConcurrentRequests);
+                break;
+            }
+        case ProviderKeys.Tidal:
+            {
+                var (opts, optsError) = TryResolveTidalOptions(scope.ServiceProvider);
+                if (opts is null)
+                {
+                    await Console.Error.WriteLineAsync(optsError);
+                    return 1;
+                }
+
+                (queuePlaylistId, maxConcurrency) = (opts.QueuePlaylistId, opts.MaxConcurrentRequests);
+                break;
+            }
+        default:
+            await Console.Error.WriteLineAsync($"queue-albums is not supported for provider '{providerKey}'.");
+            return 1;
+    }
+
+    if (string.IsNullOrEmpty(queuePlaylistId))
+    {
+        var section = char.ToUpperInvariant(providerKey[0]) + providerKey[1..];
+        await Console.Error.WriteLineAsync($"{section}:QueuePlaylistId is required for queue-albums.");
         return 1;
     }
 
-    if (string.IsNullOrEmpty(opts.QueuePlaylistId))
+    var (provider, providerError) = TryResolveProvider(scope.ServiceProvider, providerKey);
+    if (providerError is not null)
     {
-        await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for sync.");
+        await Console.Error.WriteLineAsync(providerError);
         return 1;
     }
 
-    var provider = scope.ServiceProvider.GetKeyedService<IMusicProvider>(providerKey);
     if (provider is null)
     {
         await Console.Error.WriteLineAsync(
@@ -390,7 +450,7 @@ static async Task<int> RunQueueAlbumsAsync(
     var orchestrator = scope.ServiceProvider.GetRequiredService<QueueAlbumsOrchestrator>();
 
     var ctx = new SyncRunContext(
-        providerKey, provider, opts.QueuePlaylistId, opts.MaxConcurrentRequests, dryRun, limit);
+        providerKey, provider, queuePlaylistId, maxConcurrency, dryRun, limit);
 
     try
     {
@@ -406,6 +466,41 @@ static async Task<int> RunQueueAlbumsAsync(
         return 1;
     }
 
+    return 0;
+}
+
+// Deletes a provider's stored refresh tokens so the next run re-authenticates from scratch — useful
+// after changing OAuth scopes, since a token minted under the old scopes stays stale otherwise.
+static async Task<int> RunLogoutAsync(string providerKey, bool dryRun, IServiceProvider services,
+    CancellationToken ct)
+{
+    if (!ProviderKeys.All.Contains(providerKey))
+    {
+        await Console.Error.WriteLineAsync($"logout is not supported for provider: {providerKey}");
+        return 1;
+    }
+
+    await using var scope = services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    var tokens = db.RefreshTokens.Where(x => x.Provider == providerKey);
+    var count = await tokens.CountAsync(ct);
+
+    if (count == 0)
+    {
+        await Console.Out.WriteLineAsync($"No stored {providerKey} tokens to delete.");
+        return 0;
+    }
+
+    if (dryRun)
+    {
+        await Console.Out.WriteLineAsync($"[DRY-RUN] Would delete {count} stored {providerKey} token(s).");
+        return 0;
+    }
+
+    await tokens.ExecuteDeleteAsync(ct);
+    await Console.Out.WriteLineAsync(
+        $"Deleted {count} stored {providerKey} token(s). The next {providerKey} command will re-authenticate.");
     return 0;
 }
 
@@ -589,6 +684,18 @@ static (SpotifyOptions? Options, string? Error) TryResolveSpotifyOptions(IServic
     }
 }
 
+static (TidalOptions? Options, string? Error) TryResolveTidalOptions(IServiceProvider services)
+{
+    try
+    {
+        return (services.GetRequiredService<IOptions<TidalOptions>>().Value, null);
+    }
+    catch (OptionsValidationException ex)
+    {
+        return (null, $"Invalid Tidal configuration: {string.Join("; ", ex.Failures)}");
+    }
+}
+
 // Null provider with null error means the provider isn't registered; an error means its options
 // failed validation while the HTTP pipeline read them.
 static (IMusicProvider? Provider, string? Error) TryResolveProvider(IServiceProvider services, string key)
@@ -603,42 +710,4 @@ static (IMusicProvider? Provider, string? Error) TryResolveProvider(IServiceProv
     }
 }
 
-static void ConfigureTimeouts(HttpStandardResilienceOptions options)
-{
-    options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
-    options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
-    options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
-}
-
-// Reads: retry up to maxRetries, honouring a Retry-After header when present. No practical overall
-// timeout (1 day) so a long rate-limit backoff can finish — the standard-handler validator rejects
-// an infinite total against a finite attempt, so this is a large finite value rather than infinite.
-// Individual attempts stay bounded, and Ctrl+C cancels the run (its token flows into the retry delay).
-static void ConfigureReadResilience(
-    HttpStandardResilienceOptions options, int maxRetries, string provider, Func<ILogger?> logger)
-{
-    options.TotalRequestTimeout.Timeout = TimeSpan.FromDays(1);
-    options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
-    options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
-    options.Retry.MaxRetryAttempts = maxRetries;
-    options.Retry.DelayGenerator = args =>
-        ValueTask.FromResult(args.Outcome.Result?.Headers.RetryAfter?.Delta);
-    options.Retry.OnRetry = args =>
-    {
-        if (args.Outcome.Result is { StatusCode: HttpStatusCode.TooManyRequests } response
-            && logger() is { } log)
-        {
-            var delay = response.Headers.RetryAfter?.Delta ?? args.RetryDelay;
-            Log.RateLimited(log, provider, args.AttemptNumber + 1, delay.TotalSeconds);
-        }
-
-        return default;
-    };
-}
-
-// Writes (playlist add/remove): non-idempotent, so keep timeouts + circuit breaker but never retry.
-static void ConfigureWriteResilience(HttpStandardResilienceOptions options)
-{
-    ConfigureTimeouts(options);
-    options.Retry.ShouldHandle = _ => ValueTask.FromResult(false);
-}
+// Resilience config lives in Musync.Infrastructure.Http.HttpResilience.

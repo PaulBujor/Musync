@@ -71,7 +71,7 @@ dotnet run --project src/Musync -- spotify queue-albums
 
 Runs three steps: snapshot & diff, add new tracks, report. (Token refresh happens transparently in the HTTP pipeline.)
 
-> Tidal is an import **source** only — `tidal queue-albums` and imports *into* Tidal are not supported.
+> `tidal queue-albums` is supported (requires `Tidal:QueuePlaylistId` and the `playlists.write` scope). Tidal remains import-**source** only — imports *into* Tidal are not supported.
 
 ### `<target> import --source <source>`
 
@@ -97,6 +97,17 @@ the track-history ledger so future syncs stay consistent. Use `--dry-run` to pre
 ```bash
 dotnet run --project src/Musync -- spotify reconcile-queue --dry-run
 dotnet run --project src/Musync -- spotify reconcile-queue
+```
+
+### `<provider> logout`
+
+Deletes the provider's stored refresh tokens so the next command re-authenticates from scratch. Use
+this after changing OAuth scopes — a token minted under the old scopes stays stale otherwise. Honours
+`--dry-run` (reports how many tokens would be deleted).
+
+```bash
+dotnet run --project src/Musync -- tidal logout
+dotnet run --project src/Musync -- spotify logout --dry-run
 ```
 
 ### Deprecated aliases
@@ -184,20 +195,23 @@ machine (or to cloud storage) to move your setup — re-authenticate on the new 
 
 ### Tidal (`Tidal__*`)
 
-Tidal is supported as an **import source only** (`spotify import --source tidal`). It cannot be a
-queue-albums or import *target*. Import reads the tracks in your Tidal collection ("My Collection →
-Tracks") via the v2 `userCollectionTracks` endpoint and maps them into your Spotify queue.
+Tidal supports `tidal queue-albums` (sync saved albums into a Tidal queue playlist) and is an
+import **source** (`spotify import --source tidal`). It cannot be an import *target*. Reads use the
+v2 `userCollectionAlbums` / `userCollectionTracks` / `albums` endpoints; `queue-albums` also writes
+to the configured queue playlist, which needs the `playlists.write` scope.
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `ClientId` | — | Tidal app client ID |
+| `QueuePlaylistId` | — | Tidal playlist synced by `tidal queue-albums` (required for that command) |
 | `RedirectUri` | `http://127.0.0.1:5000/callback` | OAuth redirect URI |
 | `ApiBaseUrl` | `https://openapi.tidal.com/v2/` | Tidal v2 API base URL (trailing slash required). Leave empty to disable Tidal entirely |
 | `AuthUrl` | `https://login.tidal.com/authorize` | OAuth authorisation endpoint |
 | `TokenUrl` | `https://auth.tidal.com/v1/oauth2/token` | OAuth token endpoint |
-| `Scopes` | `collection.read` | OAuth scopes |
-| `Locale` | `en-US` | `locale` sent on v2 collection reads |
+| `Scopes` | `collection.read playlists.read playlists.write` | OAuth scopes. `queue-albums` playlist writes need `playlists.write` |
+| `Locale` | `en-US` | `locale` sent on v2 collection/catalog reads |
 | `MaxRetries` | `3` | HTTP retry count |
+| `MaxConcurrentRequests` | `3` | Parallel album track fetches during `queue-albums` |
 
 ## Project Structure
 
@@ -213,7 +227,7 @@ Musync.slnx
 │   ├── Infrastructure/
 │   │   ├── Auth/             # Shared PKCE authenticator & token handler bases
 │   │   ├── Spotify/          # Spotify client, auth, token handler, models, SpotifySearchMapper
-│   │   ├── Tidal/            # Tidal client, auth, token handler, models (import source only)
+│   │   ├── Tidal/            # Tidal client, auth, token handler, models (queue-albums + import source)
 │   │   └── Persistence/      # EF Core AppDbContext
 │   ├── Jobs/                 # Sync/ + Import/ (orchestrator + step classes per flow); shared Log, CacheKeys, ReconcileQueueJob
 │   └── Migrations/           # EF Core migrations

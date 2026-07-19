@@ -1,3 +1,4 @@
+using System.Net;
 using System.Runtime.CompilerServices;
 using Musync.Domain;
 using Musync.Domain.Interfaces;
@@ -8,12 +9,14 @@ public sealed class LocalMockMusicProvider(
     List<Album>? savedAlbums = null,
     List<Track>? playlistTracks = null,
     List<Track>? savedTracks = null,
-    Dictionary<string, List<Track>>? albumTracks = null)
+    Dictionary<string, List<Track>>? albumTracks = null,
+    HashSet<string>? unavailableAlbumIds = null)
     : IMusicProvider
 {
     private readonly Dictionary<string, List<Track>>? _albumTracksOverride = albumTracks;
     private readonly List<Album> _savedAlbums = savedAlbums ?? [];
     private readonly List<Track> _savedTracks = savedTracks ?? [];
+    private readonly HashSet<string> _unavailableAlbumIds = unavailableAlbumIds ?? [];
     private List<Track> _playlistTracks = playlistTracks ?? [];
 
     public IReadOnlyList<Track> PlaylistTracks => _playlistTracks.AsReadOnly();
@@ -30,6 +33,11 @@ public sealed class LocalMockMusicProvider(
     public async IAsyncEnumerable<Track> GetAlbumTracksAsync(string albumId, string albumName,
         [EnumeratorCancellation] CancellationToken ct)
     {
+        // Mimics a region-unavailable/delisted album: the real provider's EnsureSuccessStatusCode
+        // throws HttpRequestException(404) during enumeration.
+        if (_unavailableAlbumIds.Contains(albumId))
+            throw new HttpRequestException("Not Found", null, HttpStatusCode.NotFound);
+
         var album = _savedAlbums.FirstOrDefault(a => a.Id == albumId);
         if (album != null)
             foreach (var track in AlbumTracks(albumId, albumName))

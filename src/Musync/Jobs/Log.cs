@@ -26,6 +26,12 @@ public static partial class Log
     [LoggerMessage(Level = LogLevel.Information, Message = "New albums seen:   {Count}")]
     public static partial void NewAlbumsSeen(ILogger logger, int count);
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "Albums skipped:    {Count}")]
+    public static partial void AlbumsSkipped(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "  - {AlbumName} by {ArtistName} ({Reason})")]
+    public static partial void AlbumSkippedDetail(ILogger logger, string albumName, string artistName, string reason);
+
     [LoggerMessage(Level = LogLevel.Information, Message = "Queue size:        {Count}")]
     public static partial void QueueSize(ILogger logger, int count);
 
@@ -55,6 +61,10 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Processing album {AlbumName} by {ArtistName}")]
     public static partial void ProcessingAlbum(ILogger logger, string albumName, string artistName);
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Album \"{AlbumName}\" by {ArtistName} is unavailable (404); skipping")]
+    public static partial void AlbumTracksUnavailable(ILogger logger, string albumName, string artistName);
 
     // Import logs
     [LoggerMessage(Level = LogLevel.Information, Message = "=== Import Complete ===")]

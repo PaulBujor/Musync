@@ -482,6 +482,52 @@ public sealed class QueueAlbumsOrchestratorTests
     }
 
     [Fact]
+    public async Task RunAsync_AlbumTracks404_SkipsAlbumAndProcessesOthers()
+    {
+        // A region-unavailable/delisted album 404s on its tracks. It must not abort the whole run.
+        var albums = new List<Album>
+        {
+            new("album-a", "Album A", "Artist A"),
+            new("album-gone", "Gone", "Artist G"),
+            new("album-b", "Album B", "Artist B")
+        };
+
+        var provider = new LocalMockMusicProvider(albums, unavailableAlbumIds: ["album-gone"]);
+        var sp = BuildTestServices();
+
+        var db = sp.GetRequiredService<AppDbContext>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var reportLogger = new CapturingLogger<GenerateReport>();
+        var step3 = new GenerateReport(reportLogger);
+        var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
+
+        var ctx = CreateContext(provider);
+        var orchestrator = new QueueAlbumsOrchestrator(db, step1, step2, step3, logger);
+        await orchestrator.RunAsync(ctx, CancellationToken.None);
+
+        // Run succeeds; the two available albums are processed, the 404 one is skipped.
+        var latest = await GetLatestJobRunAsync(db);
+        Assert.NotNull(latest);
+        Assert.Equal("succeeded", latest.Status);
+        Assert.Equal(2, latest.NewAlbumsEncountered);
+
+        Assert.Contains(provider.PlaylistTracks, t => t.Id == "track-a1");
+        Assert.Contains(provider.PlaylistTracks, t => t.Id == "track-b1");
+
+        var processed = await db.ProcessedAlbums.Select(p => p.AlbumId).ToListAsync();
+        Assert.Contains("album-a", processed);
+        Assert.Contains("album-b", processed);
+        // Left unprocessed so a later run retries if it becomes available.
+        Assert.DoesNotContain("album-gone", processed);
+
+        // The report surfaces the skipped album and why.
+        Assert.Contains(reportLogger.Messages, m => m == "Albums skipped:    1");
+        Assert.Contains(reportLogger.Messages,
+            m => m.Contains("Gone") && m.Contains("Artist G") && m.Contains("unavailable"));
+    }
+
+    [Fact]
     public async Task RunAsync_Limit0_ProcessesNothing()
     {
         var albums = new List<Album>
@@ -509,5 +555,23 @@ public sealed class QueueAlbumsOrchestratorTests
         var latest = await GetLatestJobRunAsync(db);
         Assert.NotNull(latest);
         Assert.Equal(0, latest.TracksAdded);
+    }
+
+    // Captures rendered log messages so a test can assert report contents.
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Messages.Add(formatter(state, exception));
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
     }
 }
