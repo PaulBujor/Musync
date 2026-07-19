@@ -99,6 +99,17 @@ dotnet run --project src/Musync -- spotify reconcile-queue --dry-run
 dotnet run --project src/Musync -- spotify reconcile-queue
 ```
 
+### `<provider> logout`
+
+Deletes the provider's stored refresh tokens so the next command re-authenticates from scratch. Use
+this after changing OAuth scopes — a token minted under the old scopes stays stale otherwise. Honours
+`--dry-run` (reports how many tokens would be deleted).
+
+```bash
+dotnet run --project src/Musync -- tidal logout
+dotnet run --project src/Musync -- spotify logout --dry-run
+```
+
 ### Deprecated aliases
 
 `sync` (→ `spotify queue-albums`) and `import-tidal` (→ `spotify import --source tidal`) still work but log a deprecation warning and exit with code `3`.
@@ -197,7 +208,7 @@ to the configured queue playlist, which needs the `playlists.write` scope.
 | `ApiBaseUrl` | `https://openapi.tidal.com/v2/` | Tidal v2 API base URL (trailing slash required). Leave empty to disable Tidal entirely |
 | `AuthUrl` | `https://login.tidal.com/authorize` | OAuth authorisation endpoint |
 | `TokenUrl` | `https://auth.tidal.com/v1/oauth2/token` | OAuth token endpoint |
-| `Scopes` | `collection.read playlists.read playlists.write` | OAuth scopes (`playlists.*` needed for `queue-albums`) |
+| `Scopes` | `collection.read playlists.read playlists.write` | OAuth scopes. `queue-albums` playlist writes need `playlists.write` |
 | `Locale` | `en-US` | `locale` sent on v2 collection/catalog reads |
 | `MaxRetries` | `3` | HTTP retry count |
 | `MaxConcurrentRequests` | `3` | Parallel album track fetches during `queue-albums` |

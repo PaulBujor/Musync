@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
@@ -11,7 +12,8 @@ public sealed class AddNewTracks(
     HybridCache cache,
     ILogger<AddNewTracks> logger)
 {
-    public async Task ExecuteAsync(JobRun jobRun, SyncRunContext ctx, SnapshotResult snapshot, CancellationToken ct)
+    public async Task<IReadOnlyList<SkippedAlbum>> ExecuteAsync(JobRun jobRun, SyncRunContext ctx,
+        SnapshotResult snapshot, CancellationToken ct)
     {
         Log.Step2Start(logger);
 
@@ -45,6 +47,7 @@ public sealed class AddNewTracks(
         var newTracks = new List<Track>();
         var newlyProcessedAlbums = new List<ProcessedAlbum>();
         var updatedProcessedAlbums = new List<ProcessedAlbum>();
+        var skippedAlbums = new List<SkippedAlbum>();
         var albumsProcessed = 0;
         var tracksSkipped = 0;
         var limitHit = false;
@@ -81,17 +84,30 @@ public sealed class AddNewTracks(
                 Log.ProcessingAlbum(logger, album.Name, album.Artist);
 
                 var albumTracks = new List<Track>();
-                await foreach (var track in ctx.Target.GetAlbumTracksAsync(album.Id, album.Name, ct2))
+                try
                 {
-                    if (likedTrackIds.Contains(track.Id)
-                        || historyTrackIds.Contains(track.Id)
-                        || snapshot.CurrentPlaylistTrackIds.Contains(track.Id))
+                    await foreach (var track in ctx.Target.GetAlbumTracksAsync(album.Id, album.Name, ct2))
                     {
-                        Interlocked.Increment(ref tracksSkipped);
-                        continue;
-                    }
+                        if (likedTrackIds.Contains(track.Id)
+                            || historyTrackIds.Contains(track.Id)
+                            || snapshot.CurrentPlaylistTrackIds.Contains(track.Id))
+                        {
+                            Interlocked.Increment(ref tracksSkipped);
+                            continue;
+                        }
 
-                    albumTracks.Add(track);
+                        albumTracks.Add(track);
+                    }
+                }
+                catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                {
+                    // A saved album can be region-unavailable or delisted and 404 on the catalog
+                    // tracks endpoint. Skip it rather than aborting the whole run, and leave it
+                    // unprocessed so a later run retries if it becomes available.
+                    Log.AlbumTracksUnavailable(logger, album.Name, album.Artist);
+                    lock (lockObj)
+                        skippedAlbums.Add(new SkippedAlbum(album.Name, album.Artist, "unavailable (404)"));
+                    return;
                 }
 
                 lock (lockObj)
@@ -180,5 +196,10 @@ public sealed class AddNewTracks(
         }
 
         jobRun.QueueSizeAfter = snapshot.QueueSizeAfterRemovals + newTracks.Count;
+
+        return skippedAlbums;
     }
 }
+
+/// <summary>A saved album that couldn't be processed this run, with the reason, for the report.</summary>
+public sealed record SkippedAlbum(string Name, string Artist, string Reason);

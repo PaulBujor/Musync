@@ -33,6 +33,9 @@ public sealed class QueueAlbumsOrchestrator(
         using var _ = logger.BeginScope(new { JobRunId = jobRun.Id.ToString() });
         Log.StartingJob(logger, "queue-albums", ctx.ProviderName, jobRun.Id.ToString());
 
+        // Populated by step 2; the report lists these. Empty on the failure/cancel paths.
+        IReadOnlyList<SkippedAlbum> skippedAlbums = [];
+
         async Task FinalizeAsync(string status, CancellationToken token, string? errorMessage = null)
         {
             jobRun.Status = status;
@@ -43,13 +46,13 @@ public sealed class QueueAlbumsOrchestrator(
             if (!ctx.DryRun)
                 await db.SaveChangesAsync(token);
 
-            await step3.ExecuteAsync(jobRun, ctx, token);
+            await step3.ExecuteAsync(jobRun, ctx, skippedAlbums, token);
         }
 
         try
         {
             var snapshot = await step1.ExecuteAsync(jobRun, ctx, ct);
-            await step2.ExecuteAsync(jobRun, ctx, snapshot, ct);
+            skippedAlbums = await step2.ExecuteAsync(jobRun, ctx, snapshot, ct);
 
             await FinalizeAsync(ctx.DryRun ? JobStatus.DryRun : JobStatus.Succeeded, ct);
         }

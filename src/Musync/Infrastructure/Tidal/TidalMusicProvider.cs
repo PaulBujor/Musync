@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -10,9 +11,9 @@ namespace Musync.Infrastructure.Tidal;
 
 public sealed class TidalMusicProvider(HttpClient http, HttpClient writeHttp, string locale) : IMusicProvider
 {
-    // TIDAL's per-request cap for playlist relationship writes isn't documented in the OpenAPI spec;
-    // keep this conservative until a real write run confirms the true maximum.
-    private const int PlaylistWriteBatchSize = 20;
+    // TIDAL's OpenAPI spec caps the add/remove items `data` array at maxItems: 50. Batching at the max
+    // minimises the number of (rate-limited) write requests.
+    private const int PlaylistWriteBatchSize = 50;
 
     public async IAsyncEnumerable<Album> GetSavedAlbumsAsync([EnumeratorCancellation] CancellationToken ct)
     {
@@ -163,6 +164,16 @@ public sealed class TidalMusicProvider(HttpClient http, HttpClient writeHttp, st
             };
 
             var response = await writeHttp.SendAsync(request, ct);
+
+            // A token without 'playlists.write' — or a playlist the user doesn't own — returns 403.
+            // Surface that plainly rather than a bare "403 Forbidden", since the fix is usually
+            // re-authenticating with the right scope or pointing at a playlist you own.
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+                throw new InvalidOperationException(
+                    "Tidal playlist write forbidden (403). Ensure the access token was granted the "
+                    + "'playlists.write' scope (re-authenticate after updating Tidal:Scopes) and that "
+                    + "Tidal:QueuePlaylistId is a playlist your account owns.");
+
             response.EnsureSuccessStatusCode();
         }
     }

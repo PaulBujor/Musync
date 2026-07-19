@@ -108,7 +108,7 @@ builder.Services
     .AddStandardResilienceHandler(o => ConfigureReadResilience(o, spotifyMaxRetries, "Spotify", ResilienceLogger));
 
 // Playlist add/remove are non-idempotent — a retried lost-but-committed POST duplicates tracks.
-// A separate client keeps timeouts and the circuit breaker but never retries writes.
+// A separate client retries only 429 (safe: rejected before processing), never 5xx/network/timeout.
 builder.Services
     .AddHttpClient("spotify-music-write", (sp, client) =>
     {
@@ -116,7 +116,7 @@ builder.Services
         client.BaseAddress = new Uri(opts.ApiBaseUrl);
     })
     .AddHttpMessageHandler<SpotifyTokenHandler>()
-    .AddStandardResilienceHandler(ConfigureWriteResilience);
+    .AddStandardResilienceHandler(o => ConfigureWriteResilience(o, spotifyMaxRetries, "Spotify", ResilienceLogger));
 
 builder.Services.AddKeyedSingleton<IMusicProvider>(ProviderKeys.Spotify, (sp, _) =>
 {
@@ -146,7 +146,7 @@ if (!string.IsNullOrEmpty(tidalConfig.ApiBaseUrl))
         .AddStandardResilienceHandler(o => ConfigureReadResilience(o, tidalConfig.MaxRetries, "Tidal", ResilienceLogger));
 
     // Playlist add/remove are non-idempotent — a retried lost-but-committed write duplicates tracks.
-    // A separate client keeps timeouts and the circuit breaker but never retries writes.
+    // A separate client retries only 429 (safe: rejected before processing), never 5xx/network/timeout.
     builder.Services
         .AddHttpClient("tidal-music-write", (sp, client) =>
         {
@@ -156,7 +156,7 @@ if (!string.IsNullOrEmpty(tidalConfig.ApiBaseUrl))
                 new MediaTypeWithQualityHeaderValue("application/vnd.api+json"));
         })
         .AddHttpMessageHandler<TidalTokenHandler>()
-        .AddStandardResilienceHandler(ConfigureWriteResilience);
+        .AddStandardResilienceHandler(o => ConfigureWriteResilience(o, tidalConfig.MaxRetries, "Tidal", ResilienceLogger));
 
     builder.Services.AddKeyedSingleton<IMusicProvider>(ProviderKeys.Tidal, (sp, _) =>
     {
@@ -283,6 +283,12 @@ var tidalImport = new Command("import", "Import tracks from another provider");
 tidalImport.Add(tidalSourceOption);
 tidalCmd.Add(tidalImport);
 
+const string logoutDescription = "Delete this provider's stored auth tokens (forces re-authentication next run)";
+var spotifyLogout = new Command("logout", logoutDescription);
+spotifyCmd.Add(spotifyLogout);
+var tidalLogout = new Command("logout", logoutDescription);
+tidalCmd.Add(tidalLogout);
+
 // Deprecated aliases
 var syncCommand = new Command("sync", "[Deprecated] Use 'spotify queue-albums' instead");
 rootCommand.Add(syncCommand);
@@ -320,6 +326,15 @@ if (invokedCommand.Name == "reconcile-queue")
         ? reconcileParent.Command.Name
         : throw new InvalidOperationException("reconcile-queue must be nested under a provider command");
     return await RunReconcileAsync(providerKey, dryRun, host.Services, cts.Token);
+}
+
+// logout: parent command is the provider name
+if (invokedCommand.Name == "logout")
+{
+    var providerKey = parseResult.CommandResult.Parent is CommandResult logoutParent
+        ? logoutParent.Command.Name
+        : throw new InvalidOperationException("logout must be nested under a provider command");
+    return await RunLogoutAsync(providerKey, dryRun, host.Services, cts.Token);
 }
 
 // import: parent command is target provider, --source is the source provider
@@ -451,6 +466,41 @@ static async Task<int> RunQueueAlbumsAsync(
         return 1;
     }
 
+    return 0;
+}
+
+// Deletes a provider's stored refresh tokens so the next run re-authenticates from scratch — useful
+// after changing OAuth scopes, since a token minted under the old scopes stays stale otherwise.
+static async Task<int> RunLogoutAsync(string providerKey, bool dryRun, IServiceProvider services,
+    CancellationToken ct)
+{
+    if (!ProviderKeys.All.Contains(providerKey))
+    {
+        await Console.Error.WriteLineAsync($"logout is not supported for provider: {providerKey}");
+        return 1;
+    }
+
+    await using var scope = services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    var tokens = db.RefreshTokens.Where(x => x.Provider == providerKey);
+    var count = await tokens.CountAsync(ct);
+
+    if (count == 0)
+    {
+        await Console.Out.WriteLineAsync($"No stored {providerKey} tokens to delete.");
+        return 0;
+    }
+
+    if (dryRun)
+    {
+        await Console.Out.WriteLineAsync($"[DRY-RUN] Would delete {count} stored {providerKey} token(s).");
+        return 0;
+    }
+
+    await tokens.ExecuteDeleteAsync(ct);
+    await Console.Out.WriteLineAsync(
+        $"Deleted {count} stored {providerKey} token(s). The next {providerKey} command will re-authenticate.");
     return 0;
 }
 
@@ -660,23 +710,17 @@ static (IMusicProvider? Provider, string? Error) TryResolveProvider(IServiceProv
     }
 }
 
-static void ConfigureTimeouts(HttpStandardResilienceOptions options)
-{
-    options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
-    options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
-    options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
-}
-
-// Reads: retry up to maxRetries, honouring a Retry-After header when present. No practical overall
-// timeout (1 day) so a long rate-limit backoff can finish — the standard-handler validator rejects
-// an infinite total against a finite attempt, so this is a large finite value rather than infinite.
-// Individual attempts stay bounded, and Ctrl+C cancels the run (its token flows into the retry delay).
-static void ConfigureReadResilience(
+// Shared base for read and write clients: rate-limit-aware retry that honours Retry-After and keeps
+// 429 out of the circuit breaker. No practical overall timeout (1 day) so a long rate-limit backoff
+// can finish — the standard handler's validator rejects an infinite total against a finite attempt,
+// so this is a large finite value. Attempts stay bounded, and Ctrl+C cancels (token flows into the delay).
+static void ConfigureRateLimitAwareResilience(
     HttpStandardResilienceOptions options, int maxRetries, string provider, Func<ILogger?> logger)
 {
     options.TotalRequestTimeout.Timeout = TimeSpan.FromDays(1);
     options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
     options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
+    ExcludeRateLimitFromCircuitBreaker(options);
     options.Retry.MaxRetryAttempts = maxRetries;
     options.Retry.DelayGenerator = args =>
         ValueTask.FromResult(args.Outcome.Result?.Headers.RetryAfter?.Delta);
@@ -693,9 +737,32 @@ static void ConfigureReadResilience(
     };
 }
 
-// Writes (playlist add/remove): non-idempotent, so keep timeouts + circuit breaker but never retry.
-static void ConfigureWriteResilience(HttpStandardResilienceOptions options)
+// 429 is a rate-limit signal we handle via the retry strategy (honouring Retry-After), not a
+// service-health failure. It must not count toward the circuit breaker, or a single 429 opens the
+// breaker and the retry's next attempt immediately hits an open circuit and fails the whole run.
+// The breaker still trips on the transient failures we DON'T handle (5xx, 408, network, timeout) —
+// this wraps the standard handler's default predicate rather than replacing it.
+static void ExcludeRateLimitFromCircuitBreaker(HttpStandardResilienceOptions options)
 {
-    ConfigureTimeouts(options);
-    options.Retry.ShouldHandle = _ => ValueTask.FromResult(false);
+    var defaultShouldHandle = options.CircuitBreaker.ShouldHandle;
+    options.CircuitBreaker.ShouldHandle = async args =>
+        args.Outcome.Result?.StatusCode != HttpStatusCode.TooManyRequests
+        && await defaultShouldHandle(args);
+}
+
+// Reads: retry every transient failure (the standard handler's default predicate — 5xx/408/429/network),
+// honouring Retry-After.
+static void ConfigureReadResilience(
+    HttpStandardResilienceOptions options, int maxRetries, string provider, Func<ILogger?> logger)
+    => ConfigureRateLimitAwareResilience(options, maxRetries, provider, logger);
+
+// Writes (playlist add/remove) are non-idempotent: a retried request that actually committed but lost
+// its response would duplicate tracks. So retry ONLY on 429 — the server rejected it before processing,
+// so nothing was applied and a Retry-After backoff is safe. 5xx/network/timeout are never retried.
+static void ConfigureWriteResilience(
+    HttpStandardResilienceOptions options, int maxRetries, string provider, Func<ILogger?> logger)
+{
+    ConfigureRateLimitAwareResilience(options, maxRetries, provider, logger);
+    options.Retry.ShouldHandle = args =>
+        ValueTask.FromResult(args.Outcome.Result?.StatusCode == HttpStatusCode.TooManyRequests);
 }

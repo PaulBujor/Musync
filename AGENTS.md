@@ -40,6 +40,7 @@ dotnet add src/Musync package System.CommandLine
 
 - `spotify queue-albums` / `tidal queue-albums` — sync saved albums into that provider's queue playlist (`<Provider>:QueuePlaylistId`). Tidal writes require the `playlists.write` scope.
 - `spotify import --source <provider>` — import from another provider (source ≠ target; target must be Spotify). Tidal is import-**source** only (no track mapper for importing *into* Tidal); it reads collection tracks via the v2 `userCollectionTracks` endpoint.
+- `spotify logout` / `tidal logout` — delete that provider's stored refresh tokens (forces re-auth; run after changing scopes). DB-only, so it works even for an unconfigured provider.
 - Global recursive options: `--dry-run` (no provider mutation), `--limit <n>`.
 - Deprecated aliases `sync` and `import-tidal` still dispatch (to `spotify queue-albums` / `spotify import --source tidal`) but log a warning and return exit code `3`.
 - Exit codes: `0` success, `1` error/misconfiguration, `2` cancelled, `3` deprecated alias succeeded.

@@ -277,8 +277,8 @@ public sealed class TidalMusicProviderTests
                 return new HttpResponseMessage(HttpStatusCode.Created);
             });
 
-        // 25 ids with a batch size of 20 → two requests (20 + 5).
-        var ids = Enumerable.Range(1, 25).Select(i => $"t{i}").ToList();
+        // 55 ids with a batch size of 50 → two requests (50 + 5).
+        var ids = Enumerable.Range(1, 55).Select(i => $"t{i}").ToList();
         await provider.AddTracksToPlaylistAsync("pl1", ids, CancellationToken.None);
 
         Assert.Equal(2, writes.Count);
@@ -291,8 +291,22 @@ public sealed class TidalMusicProviderTests
         Assert.Contains("\"data\":", writes[0].Body);
         Assert.Contains("\"type\":\"tracks\"", writes[0].Body);
         Assert.Contains("\"id\":\"t1\"", writes[0].Body);
-        Assert.Equal(20, Regex.Count(writes[0].Body, "\"type\":\"tracks\""));
+        Assert.Equal(50, Regex.Count(writes[0].Body, "\"type\":\"tracks\""));
         Assert.Equal(5, Regex.Count(writes[1].Body, "\"type\":\"tracks\""));
+    }
+
+    [Fact]
+    public async Task AddTracksToPlaylistAsync_Forbidden_ThrowsActionableError()
+    {
+        var provider = CreateProvider(
+            _ => Json("{}"),
+            writeHandler: _ => new HttpResponseMessage(HttpStatusCode.Forbidden));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            provider.AddTracksToPlaylistAsync("pl1", ["t1"], CancellationToken.None));
+
+        Assert.Contains("403", ex.Message);
+        Assert.Contains("playlists.write", ex.Message);
     }
 
     [Fact]

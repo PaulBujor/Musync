@@ -5,7 +5,8 @@ namespace Musync.Jobs.Sync;
 
 public sealed class GenerateReport(ILogger<GenerateReport> logger)
 {
-    public Task ExecuteAsync(JobRun jobRun, SyncRunContext ctx, CancellationToken ct)
+    public Task ExecuteAsync(JobRun jobRun, SyncRunContext ctx, IReadOnlyList<SkippedAlbum> skippedAlbums,
+        CancellationToken ct)
     {
         var duration = jobRun.FinishedAt.HasValue
             ? jobRun.FinishedAt.Value - jobRun.StartedAt
@@ -24,6 +25,9 @@ public sealed class GenerateReport(ILogger<GenerateReport> logger)
             jobRun.TracksRemovedManual);
         Log.TracksSkipped(logger, jobRun.TracksSkipped);
         Log.NewAlbumsSeen(logger, jobRun.NewAlbumsEncountered);
+        Log.AlbumsSkipped(logger, skippedAlbums.Count);
+        foreach (var album in skippedAlbums)
+            Log.AlbumSkippedDetail(logger, album.Name, album.Artist, album.Reason);
         Log.QueueSize(logger, jobRun.QueueSizeAfter);
 
         if (ctx.Limit.HasValue)
