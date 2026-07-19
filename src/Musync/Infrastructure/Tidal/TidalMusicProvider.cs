@@ -63,12 +63,9 @@ public sealed class TidalMusicProvider(HttpClient http, HttpClient writeHttp, st
 
     public async IAsyncEnumerable<Track> GetSavedTracksAsync([EnumeratorCancellation] CancellationToken ct)
     {
-        // The …/relationships/items sub-resource (not the singular …/me collection) is what returns
-        // a paginated list with a top-level links.next; …/me embeds only the first page and carries
-        // no next link. Nested include pulls each item's track together with its artists and albums,
-        // so a single request per page carries everything needed to build a Track — no follow-ups.
-        // Relative to the client's BaseAddress, which ends in ".../v2/" — no leading slash, or the
-        // "/v2" path segment would be dropped.
+        // Use the …/relationships/items sub-resource, not the singular …/me collection: only the former
+        // paginates (top-level links.next). The nested include returns each track with its artists and
+        // albums in one response, so there are no per-track follow-up requests.
         var url = $"userCollectionTracks/me/relationships/items?locale={Uri.EscapeDataString(locale)}"
                   + "&include=items.artists,items.albums";
 

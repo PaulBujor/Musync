@@ -710,4 +710,4 @@ static (IMusicProvider? Provider, string? Error) TryResolveProvider(IServiceProv
     }
 }
 
-// Resilience config lives in Musync.Infrastructure.Http.HttpResilience (extracted so it's testable).
+// Resilience config lives in Musync.Infrastructure.Http.HttpResilience.
