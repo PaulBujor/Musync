@@ -264,6 +264,120 @@ public sealed class TidalMusicProviderTests
         Assert.Equal("/v2/playlists/pl1/relationships/items", requestedUri!.AbsolutePath);
     }
 
+    private static async Task<List<Track>> CollectPlaylistAsync(TidalMusicProvider provider)
+    {
+        var tracks = new List<Track>();
+        await foreach (var t in provider.GetPlaylistTracksAsync("pl1", CancellationToken.None))
+            tracks.Add(t);
+        return tracks;
+    }
+
+    [Fact]
+    public async Task GetPlaylistTracksAsync_PreservesDuplicateOccurrencesFromData()
+    {
+        // The primary `data` linkage lists t1 twice; `included` (deduped by (type,id)) lists it once.
+        // Reading from `data` must surface both occurrences — this is what lets dedup, liked-removal
+        // and reconcile see duplicates at all.
+        const string body =
+            """
+            {
+              "data": [
+                { "type": "tracks", "id": "t1" },
+                { "type": "tracks", "id": "t1" },
+                { "type": "tracks", "id": "t2" }
+              ],
+              "included": [
+                { "type": "tracks", "id": "t1", "attributes": { "title": "One" } },
+                { "type": "tracks", "id": "t2", "attributes": { "title": "Two" } }
+              ],
+              "links": { "next": null }
+            }
+            """;
+
+        var provider = CreateProvider(_ => Json(body));
+
+        var tracks = await CollectPlaylistAsync(provider);
+
+        Assert.Equal(3, tracks.Count);
+        Assert.Equal(2, tracks.Count(t => t.Id == "t1"));
+        Assert.Equal(1, tracks.Count(t => t.Id == "t2"));
+        Assert.Equal("One", tracks.First(t => t.Id == "t1").Name);
+    }
+
+    [Fact]
+    public async Task GetPlaylistTracksAsync_PopulatesIsrcAndAddedAtFromResponse()
+    {
+        const string body =
+            """
+            {
+              "data": [
+                { "type": "tracks", "id": "t1",
+                  "meta": { "itemId": "i1", "addedAt": "2020-05-01T10:00:00Z" } }
+              ],
+              "included": [
+                { "type": "tracks", "id": "t1",
+                  "attributes": { "title": "Song One", "isrc": "US0000000001" } }
+              ],
+              "links": { "next": null }
+            }
+            """;
+
+        var provider = CreateProvider(_ => Json(body));
+
+        var track = Assert.Single(await CollectPlaylistAsync(provider));
+        Assert.Equal("t1", track.Id);
+        Assert.Equal("US0000000001", track.Isrc);
+        Assert.Equal(new DateTimeOffset(2020, 5, 1, 10, 0, 0, TimeSpan.Zero), track.AddedAt);
+    }
+
+    [Fact]
+    public async Task GetPlaylistTracksAsync_LinkageWithoutSideloadedResource_YieldsIdWithBlankName()
+    {
+        // A linkage entry whose track resource isn't sideloaded (empty `included`) must still be
+        // yielded so membership/dup counts stay complete. This also proves the page isn't truncated
+        // just because `included` is empty.
+        const string body =
+            """
+            { "data": [ { "type": "tracks", "id": "t3" } ], "included": [], "links": { "next": null } }
+            """;
+
+        var provider = CreateProvider(_ => Json(body));
+
+        var track = Assert.Single(await CollectPlaylistAsync(provider));
+        Assert.Equal("t3", track.Id);
+        Assert.Equal("", track.Name);
+    }
+
+    [Fact]
+    public async Task GetPlaylistTracksAsync_FollowsNextLinkAccumulatingOccurrences()
+    {
+        const string page1 =
+            """
+            {
+              "data": [ { "type": "tracks", "id": "t1" } ],
+              "included": [ { "type": "tracks", "id": "t1", "attributes": { "title": "One" } } ],
+              "links": { "next": "/playlists/pl1/relationships/items?locale=en-US&page%5Bcursor%5D=20" }
+            }
+            """;
+        const string page2 =
+            """
+            {
+              "data": [ { "type": "tracks", "id": "t1" } ],
+              "included": [ { "type": "tracks", "id": "t1", "attributes": { "title": "One" } } ],
+              "links": { "next": null }
+            }
+            """;
+
+        var provider = CreateProvider(request =>
+            Json(request.RequestUri!.Query.Contains("cursor") ? page2 : page1));
+
+        var tracks = await CollectPlaylistAsync(provider);
+
+        // Same track id on both pages → two occurrences (cross-page duplicate visible, no truncation).
+        Assert.Equal(2, tracks.Count);
+        Assert.All(tracks, t => Assert.Equal("t1", t.Id));
+    }
+
     [Fact]
     public async Task AddTracksToPlaylistAsync_PostsBatchedJsonApiItems()
     {
@@ -293,6 +407,8 @@ public sealed class TidalMusicProviderTests
         Assert.Contains("\"id\":\"t1\"", writes[0].Body);
         Assert.Equal(50, Regex.Count(writes[0].Body, "\"type\":\"tracks\""));
         Assert.Equal(5, Regex.Count(writes[1].Body, "\"type\":\"tracks\""));
+        // Add appends fresh occurrences — no per-item id, so the WhenWritingNull meta is omitted.
+        Assert.DoesNotContain("meta", writes[0].Body);
     }
 
     [Fact]
@@ -310,11 +426,30 @@ public sealed class TidalMusicProviderTests
     }
 
     [Fact]
-    public async Task RemoveTracksFromPlaylistAsync_SendsBatchedDeleteJsonApiItems()
+    public async Task RemoveTracksFromPlaylistAsync_TranslatesTrackIdsToEveryOccurrenceItemId()
     {
+        // Removal is occurrence-aware: it first reads the playlist linkage to find each requested
+        // track id's per-occurrence item id(s), then DELETEs those. t1 appears twice (i1, i2), so both
+        // copies are removed; t3 is not requested and must be left alone.
+        // Schema-dependent: the linkage carries the item id under `meta.itemId`, and the DELETE body
+        // sends `{ "id": <trackId>, "type": "tracks", "meta": { "itemId": <itemId> } }`. Confirm
+        // against the live TIDAL v2 API before relying on removal (see plan Verification).
+        const string linkage =
+            """
+            {
+              "data": [
+                { "type": "tracks", "id": "t1", "meta": { "itemId": "i1" } },
+                { "type": "tracks", "id": "t1", "meta": { "itemId": "i2" } },
+                { "type": "tracks", "id": "t2", "meta": { "itemId": "i3" } },
+                { "type": "tracks", "id": "t3", "meta": { "itemId": "i4" } }
+              ],
+              "links": { "next": null }
+            }
+            """;
+
         var writes = new List<(HttpMethod Method, string Path, string Body)>();
         var provider = CreateProvider(
-            _ => Json("{}"),
+            _ => Json(linkage),
             writeHandler: request =>
             {
                 var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
@@ -327,7 +462,27 @@ public sealed class TidalMusicProviderTests
         var write = Assert.Single(writes);
         Assert.Equal(HttpMethod.Delete, write.Method);
         Assert.Equal("/v2/playlists/pl1/relationships/items", write.Path);
-        Assert.Contains("\"id\":\"t1\"", write.Body);
-        Assert.Contains("\"id\":\"t2\"", write.Body);
+        Assert.Contains("\"itemId\":\"i1\"", write.Body);
+        Assert.Contains("\"itemId\":\"i2\"", write.Body);
+        Assert.Contains("\"itemId\":\"i3\"", write.Body);
+        // t3's occurrence was not requested for removal.
+        Assert.DoesNotContain("i4", write.Body);
+    }
+
+    [Fact]
+    public async Task RemoveTracksFromPlaylistAsync_NoMatchingOccurrences_SendsNoWrite()
+    {
+        var writes = new List<HttpMethod>();
+        var provider = CreateProvider(
+            _ => Json("""{ "data": [ { "type": "tracks", "id": "t9", "meta": { "itemId": "i9" } } ], "links": { "next": null } }"""),
+            writeHandler: request =>
+            {
+                writes.Add(request.Method);
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            });
+
+        await provider.RemoveTracksFromPlaylistAsync("pl1", ["t1"], CancellationToken.None);
+
+        Assert.Empty(writes);
     }
 }

@@ -147,4 +147,26 @@ public static partial class Log
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Queue already has no duplicates")]
     public static partial void ReconcileNoDuplicates(ILogger logger);
+
+    // Reconcile end-of-run report
+    [LoggerMessage(Level = LogLevel.Information, Message = "=== Reconcile Complete ===")]
+    public static partial void ReconcileCompleteHeader(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Playlist items:      {Count}")]
+    public static partial void ReconcilePlaylistItems(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Distinct songs:      {Count}")]
+    public static partial void ReconcileDistinctSongs(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Duplicate groups:    {Count}")]
+    public static partial void ReconcileDuplicateGroups(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Copies removed:      {Count}")]
+    public static partial void ReconcileCopiesRemoved(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Copies to remove:    {Count}")]
+    public static partial void ReconcileCopiesToRemove(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "History backfilled:  {Count}")]
+    public static partial void ReconcileHistoryBackfilled(ILogger logger, int count);
 }

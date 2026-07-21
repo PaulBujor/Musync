@@ -331,6 +331,82 @@ public sealed class QueueAlbumsOrchestratorTests
     }
 
     [Fact]
+    public async Task RunAsync_EditionTwinAlreadyInPlaylist_NotAdded()
+    {
+        // The playlist already has a song under one catalog id; a saved album offers the same
+        // recording (same ISRC) under a different id. It must be skipped, not added as a duplicate.
+        var albums = new List<Album> { new("album-a", "Album A (Deluxe)", "Artist A") };
+        var albumTracks = new Dictionary<string, List<Track>>
+        {
+            ["album-a"] = [new Track("id-deluxe", "Song", "Artist A", "Album A (Deluxe)", "USABC1234567")]
+        };
+        var playlistTracks = new List<Track>
+        {
+            new("id-standard", "Song", "Artist A", "Album A", "USABC1234567")
+        };
+
+        var provider = new LocalMockMusicProvider(albums, playlistTracks, albumTracks: albumTracks);
+        var sp = BuildTestServices();
+
+        var db = sp.GetRequiredService<AppDbContext>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
+        var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
+
+        var ctx = CreateContext(provider);
+        var orchestrator = new QueueAlbumsOrchestrator(db, step1, step2, step3, logger);
+        await orchestrator.RunAsync(ctx, CancellationToken.None);
+
+        Assert.Single(provider.PlaylistTracks);
+        Assert.Contains(provider.PlaylistTracks, t => t.Id == "id-standard");
+        Assert.DoesNotContain(provider.PlaylistTracks, t => t.Id == "id-deluxe");
+
+        var latest = await GetLatestJobRunAsync(db);
+        Assert.NotNull(latest);
+        Assert.Equal(0, latest.TracksAdded);
+        Assert.Equal(1, latest.TracksSkipped);
+    }
+
+    [Fact]
+    public async Task RunAsync_SameArtistTitleDifferentIsrc_NotAdded()
+    {
+        // The playlist has the song under one pressing; a saved album offers the same artist+title
+        // under a DIFFERENT ISRC and id (a different pressing). Artist+title dedup must skip it.
+        var albums = new List<Album> { new("album-a", "Swimming (Deluxe)", "Mac Miller") };
+        var albumTracks = new Dictionary<string, List<Track>>
+        {
+            ["album-a"] = [new Track("id-deluxe", "2009", "Mac Miller", "Swimming (Deluxe)", "USWB11801233")]
+        };
+        var playlistTracks = new List<Track>
+        {
+            new("id-standard", "2009", "Mac Miller", "Swimming", "USWB11801221")
+        };
+
+        var provider = new LocalMockMusicProvider(albums, playlistTracks, albumTracks: albumTracks);
+        var sp = BuildTestServices();
+
+        var db = sp.GetRequiredService<AppDbContext>();
+        var step1 = sp.GetRequiredService<SnapshotAndDiff>();
+        var step2 = sp.GetRequiredService<AddNewTracks>();
+        var step3 = sp.GetRequiredService<GenerateReport>();
+        var logger = NullLogger<QueueAlbumsOrchestrator>.Instance;
+
+        var ctx = CreateContext(provider);
+        var orchestrator = new QueueAlbumsOrchestrator(db, step1, step2, step3, logger);
+        await orchestrator.RunAsync(ctx, CancellationToken.None);
+
+        Assert.Single(provider.PlaylistTracks);
+        Assert.Contains(provider.PlaylistTracks, t => t.Id == "id-standard");
+        Assert.DoesNotContain(provider.PlaylistTracks, t => t.Id == "id-deluxe");
+
+        var latest = await GetLatestJobRunAsync(db);
+        Assert.NotNull(latest);
+        Assert.Equal(0, latest.TracksAdded);
+        Assert.Equal(1, latest.TracksSkipped);
+    }
+
+    [Fact]
     public async Task RunAsync_RerunAfterLostLedger_DoesNotDuplicate()
     {
         // Mimics a run whose Spotify add committed but whose ledger write was lost.

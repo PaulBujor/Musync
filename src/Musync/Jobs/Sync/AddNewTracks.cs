@@ -17,30 +17,31 @@ public sealed class AddNewTracks(
     {
         Log.Step2Start(logger);
 
-        var likedTrackIdsTask = cache.GetOrCreateAsync(
+        var likedIndexTask = cache.GetOrCreateAsync(
             CacheKeys.LikedTracks(ctx.ProviderName),
-            async ct2 =>
-            {
-                var ids = new HashSet<string>();
-                await foreach (var t in ctx.Target.GetSavedTracksAsync(ct2))
-                    ids.Add(t.Id);
-                return ids;
-            },
+            ct2 => BuildLikedIndexAsync(ctx, ct2),
             cancellationToken: ct).AsTask();
 
-        var historyTrackIdsTask = db.TrackHistories
+        var historyTask = db.TrackHistories
             .Where(x => x.Provider == ctx.ProviderName)
-            .Select(x => x.TrackId)
-            .Distinct()
-            .ToHashSetAsync(ct);
+            .Select(x => new { x.TrackId, x.TrackName, x.ArtistName, x.AlbumName, x.Isrc })
+            .ToListAsync(ct);
 
         var processedAlbumsTask = db.ProcessedAlbums
             .Where(x => x.Provider == ctx.ProviderName)
             .ToListAsync(ct);
 
-        var likedTrackIds = await likedTrackIdsTask;
-        var historyTrackIds = await historyTrackIdsTask;
+        var likedIndex = await likedIndexTask;
+        var history = await historyTask;
         var processedAlbums = await processedAlbumsTask;
+
+        // Combined "already have this song" set: liked ∪ history ∪ current playlist, matched by id,
+        // ISRC OR artist+title. Built once up front, then only read inside the parallel loop (safe).
+        var presence = likedIndex.ToPresenceSet();
+        foreach (var h in history)
+            presence.Add(new Track(h.TrackId, h.TrackName, h.ArtistName, h.AlbumName, h.Isrc));
+        foreach (var t in snapshot.CurrentPlaylistTracks)
+            presence.Add(t);
         var processedAlbumIds = processedAlbums.Select(a => a.AlbumId).ToHashSet();
         var processedAlbumDict = processedAlbums.ToDictionary(a => a.AlbumId);
 
@@ -88,9 +89,7 @@ public sealed class AddNewTracks(
                 {
                     await foreach (var track in ctx.Target.GetAlbumTracksAsync(album.Id, album.Name, ct2))
                     {
-                        if (likedTrackIds.Contains(track.Id)
-                            || historyTrackIds.Contains(track.Id)
-                            || snapshot.CurrentPlaylistTrackIds.Contains(track.Id))
+                        if (presence.Contains(track))
                         {
                             Interlocked.Increment(ref tracksSkipped);
                             continue;
@@ -138,11 +137,10 @@ public sealed class AddNewTracks(
 
         if (ctx.Limit.HasValue && limitHit) Log.LimitReached(logger, ctx.Limit.Value);
 
-        // A track can appear on more than one saved album; keep a single copy per id.
-        newTracks = newTracks
-            .GroupBy(t => t.Id)
-            .Select(g => g.First())
-            .ToList();
+        // A track can appear on more than one saved album — and the same recording can appear under
+        // different catalog ids across editions. Keep a single copy per song (matched by id or ISRC).
+        var runDedup = new TrackPresenceSet();
+        newTracks = newTracks.Where(runDedup.Add).ToList();
 
         if (newTracks.Count > 0)
         {
@@ -166,6 +164,7 @@ public sealed class AddNewTracks(
                     TrackName = t.Name,
                     ArtistName = t.Artist,
                     AlbumName = t.Album,
+                    Isrc = t.Isrc,
                     AddedAt = DateTime.UtcNow
                 });
 
@@ -198,6 +197,15 @@ public sealed class AddNewTracks(
         jobRun.QueueSizeAfter = snapshot.QueueSizeAfterRemovals + newTracks.Count;
 
         return skippedAlbums;
+    }
+
+    private static async ValueTask<LikedTracksIndex> BuildLikedIndexAsync(SyncRunContext ctx, CancellationToken ct)
+    {
+        var tracks = new List<Track>();
+        await foreach (var t in ctx.Target.GetSavedTracksAsync(ct))
+            tracks.Add(t);
+
+        return LikedTracksIndex.FromTracks(tracks);
     }
 }
 

@@ -15,23 +15,23 @@ public sealed class SnapshotAndDiff(
     {
         Log.Step1Start(logger);
 
-        var likedTrackIdsTask = cache.GetOrCreateAsync(
+        var likedIndexTask = cache.GetOrCreateAsync(
             CacheKeys.LikedTracks(ctx.ProviderName),
-            async ct2 =>
-            {
-                var ids = new HashSet<string>();
-                await foreach (var t in ctx.Target.GetSavedTracksAsync(ct2))
-                    ids.Add(t.Id);
-                return ids;
-            },
+            ct2 => BuildLikedIndexAsync(ctx, ct2),
             cancellationToken: ct).AsTask();
 
         var currentPlaylistTracks = await FetchPlaylistAsync(ctx, ct);
-        var likedTrackIds = await likedTrackIdsTask;
+        var likedPresence = (await likedIndexTask).ToPresenceSet();
 
-        var currentTrackIds = currentPlaylistTracks.Select(t => t.Id).ToHashSet();
+        // Playlist tracks that are already liked/saved — remove them from the queue. Match on id OR
+        // ISRC so a liked song present under a different catalog id (another album edition) is pulled
+        // too. Remove by playlist track id (the Tidal remove is occurrence-aware).
+        var likedInPlaylist = currentPlaylistTracks
+            .Where(t => likedPresence.Contains(t))
+            .Select(t => t.Id)
+            .Distinct()
+            .ToList();
 
-        var likedInPlaylist = currentTrackIds.Where(likedTrackIds.Contains).ToList();
         if (likedInPlaylist.Count > 0)
         {
             if (ctx.DryRun)
@@ -66,11 +66,19 @@ public sealed class SnapshotAndDiff(
             jobRun.TracksRemovedLiked = likedInPlaylist.Count;
         }
 
+        // What still remains in the playlist (id + ISRC), for manual-removal detection.
+        var removedLiked = new HashSet<string>(likedInPlaylist, StringComparer.Ordinal);
+        var currentPresence = new TrackPresenceSet();
+        foreach (var t in currentPlaylistTracks)
+            if (!removedLiked.Contains(t.Id))
+                currentPresence.Add(t);
+
         var activeHistory = await db.TrackHistories
             .Where(x => x.Provider == ctx.ProviderName && x.RemovedAt == null)
             .ToListAsync(ct);
         var manualRemovals = activeHistory
-            .Where(h => !currentTrackIds.Contains(h.TrackId) && !likedInPlaylist.Contains(h.TrackId))
+            .Where(h => !currentPresence.Contains(new Track(h.TrackId, h.TrackName, h.ArtistName, h.AlbumName, h.Isrc))
+                        && !removedLiked.Contains(h.TrackId))
             .ToList();
 
         if (manualRemovals.Count > 0)
@@ -100,7 +108,22 @@ public sealed class SnapshotAndDiff(
             await transaction.CommitAsync(ct);
         }
 
-        return new SnapshotResult(currentTrackIds, currentTrackIds.Count - likedInPlaylist.Count);
+        var queueSizeAfterRemovals = currentPlaylistTracks
+            .Where(t => !removedLiked.Contains(t.Id))
+            .Select(t => t.PrimaryKey)
+            .Distinct()
+            .Count();
+
+        return new SnapshotResult(currentPlaylistTracks, queueSizeAfterRemovals);
+    }
+
+    private static async ValueTask<LikedTracksIndex> BuildLikedIndexAsync(SyncRunContext ctx, CancellationToken ct)
+    {
+        var tracks = new List<Track>();
+        await foreach (var t in ctx.Target.GetSavedTracksAsync(ct))
+            tracks.Add(t);
+
+        return LikedTracksIndex.FromTracks(tracks);
     }
 
     private async Task<List<Track>> FetchPlaylistAsync(SyncRunContext ctx, CancellationToken ct)
@@ -113,4 +136,4 @@ public sealed class SnapshotAndDiff(
 }
 
 /// <summary>State captured by snapshot &amp; diff and passed to the add-tracks step.</summary>
-public sealed record SnapshotResult(IReadOnlySet<string> CurrentPlaylistTrackIds, int QueueSizeAfterRemovals);
+public sealed record SnapshotResult(IReadOnlyList<Track> CurrentPlaylistTracks, int QueueSizeAfterRemovals);

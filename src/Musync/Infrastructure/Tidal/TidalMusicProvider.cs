@@ -22,9 +22,10 @@ public sealed class TidalMusicProvider(HttpClient http, HttpClient writeHttp, st
 
         await foreach (var page in GetPagesAsync(url, ct))
         {
-            var (artistNames, _) = BuildLookups(page.Included!);
+            var included = page.Included ?? [];
+            var (artistNames, _) = BuildLookups(included);
 
-            foreach (var resource in page.Included!)
+            foreach (var resource in included)
             {
                 if (resource.Type != "albums" || resource.Attributes is not { } attrs)
                     continue;
@@ -56,8 +57,10 @@ public sealed class TidalMusicProvider(HttpClient http, HttpClient writeHttp, st
         var url = $"playlists/{Uri.EscapeDataString(playlistId)}/relationships/items?locale={Uri.EscapeDataString(locale)}"
                   + "&include=items.artists";
 
+        // Read membership from the per-occurrence `data` linkage (not `included`, which dedupes),
+        // so duplicate occurrences are visible to dedup/liked-removal/reconcile.
         await foreach (var page in GetPagesAsync(url, ct))
-            foreach (var track in ProjectTracks(page, albumName: null))
+            foreach (var track in ProjectTracksFromData(page))
                 yield return track;
     }
 
@@ -74,14 +77,64 @@ public sealed class TidalMusicProvider(HttpClient http, HttpClient writeHttp, st
                 yield return track;
     }
 
-    public Task AddTracksToPlaylistAsync(string playlistId, IEnumerable<string> trackUris, CancellationToken ct) =>
-        WriteItemsInBatchesAsync(HttpMethod.Post, playlistId, trackUris, ct);
+    public Task AddTracksToPlaylistAsync(string playlistId, IEnumerable<string> trackUris, CancellationToken ct)
+    {
+        var items = trackUris.Select(id => new TidalResourceIdentifier { Id = id, Type = "tracks" });
+        return SendItemBatchesAsync(HttpMethod.Post, playlistId, items, ct);
+    }
 
-    public Task RemoveTracksFromPlaylistAsync(string playlistId, IEnumerable<string> trackUris, CancellationToken ct) =>
-        WriteItemsInBatchesAsync(HttpMethod.Delete, playlistId, trackUris, ct);
+    // Removal is occurrence-aware: a TIDAL playlist can hold the same track id more than once, and each
+    // occurrence has its own item id. Deleting a copy targets that item id (via meta.itemId), so first
+    // read the playlist's linkage to find every occurrence of the requested track ids, then DELETE
+    // them. Because this removes *all* occurrences of each requested track id, it matches Spotify's
+    // uri-delete semantics — so the provider-agnostic reconcile and liked-removal callers work
+    // unchanged, and reconcile's remove-all-then-re-add-one still yields exactly one copy.
+    public async Task RemoveTracksFromPlaylistAsync(string playlistId, IEnumerable<string> trackUris,
+        CancellationToken ct)
+    {
+        var targetTrackIds = trackUris.ToHashSet();
+        if (targetTrackIds.Count == 0)
+            return;
 
-    // Pages through a JSON:API relationship collection, yielding each page whose `included` is
-    // non-empty. TIDAL returns links.next as a leading-slash path missing "/v2" — ReRoot re-roots it.
+        var occurrences = new List<TidalResourceIdentifier>();
+        await foreach (var link in GetPlaylistLinkageAsync(playlistId, ct))
+        {
+            if (link.Id is not { } id || link.Type != "tracks" || !targetTrackIds.Contains(id))
+                continue;
+
+            occurrences.Add(new TidalResourceIdentifier
+            {
+                Id = id,
+                Type = "tracks",
+                // Fall back to a plain track-id identifier if the read didn't surface an item id.
+                Meta = link.Meta?.ItemId is { } itemId
+                    ? new TidalResourceIdentifierMeta { ItemId = itemId }
+                    : null
+            });
+        }
+
+        if (occurrences.Count > 0)
+            await SendItemBatchesAsync(HttpMethod.Delete, playlistId, occurrences, ct);
+    }
+
+    // Streams the playlist's per-occurrence linkage identifiers (id + meta.itemId). No `include` — the
+    // item id lives on the linkage itself, so there's no need to sideload track resources here.
+    private async IAsyncEnumerable<TidalResourceIdentifier> GetPlaylistLinkageAsync(string playlistId,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var url = $"playlists/{Uri.EscapeDataString(playlistId)}/relationships/items"
+                  + $"?locale={Uri.EscapeDataString(locale)}";
+
+        await foreach (var page in GetPagesAsync(url, ct))
+            foreach (var link in page.Data ?? [])
+                yield return link;
+    }
+
+    // Pages through a JSON:API relationship collection, following links.next until it's null. TIDAL
+    // returns links.next as a leading-slash path missing "/v2" — ReRoot re-roots it. Termination is
+    // driven solely by links.next: a page can legitimately carry non-empty `data` with empty
+    // `included` (e.g. a linkage whose track resource is region-unavailable, so not sideloaded), and
+    // stopping on the first empty `included` would truncate the read and drop later items.
     private async IAsyncEnumerable<TidalCollectionResponse> GetPagesAsync(string? url,
         [EnumeratorCancellation] CancellationToken ct)
     {
@@ -93,7 +146,7 @@ public sealed class TidalMusicProvider(HttpClient http, HttpClient writeHttp, st
             var page = await response.Content
                 .ReadFromJsonAsync(TidalApiJsonContext.Default.TidalCollectionResponse, ct);
 
-            if (page?.Included is not { Count: > 0 })
+            if (page is null)
                 yield break;
 
             yield return page;
@@ -106,9 +159,10 @@ public sealed class TidalMusicProvider(HttpClient http, HttpClient writeHttp, st
     // resolved from an included `albums` resource (present only when the request nested items.albums).
     private static IEnumerable<Track> ProjectTracks(TidalCollectionResponse page, string? albumName)
     {
-        var (artistNames, albumTitles) = BuildLookups(page.Included!);
+        var included = page.Included ?? [];
+        var (artistNames, albumTitles) = BuildLookups(included);
 
-        foreach (var resource in page.Included!)
+        foreach (var resource in included)
         {
             if (resource.Type != "tracks" || resource.Attributes is not { } attrs)
                 continue;
@@ -119,6 +173,41 @@ public sealed class TidalMusicProvider(HttpClient http, HttpClient writeHttp, st
                 ResolveName(resource.Relationships?.Artists, artistNames),
                 albumName ?? ResolveName(resource.Relationships?.Albums, albumTitles),
                 attrs.Isrc);
+        }
+    }
+
+    // Projects tracks from the primary `data` linkage (one Track per occurrence, in order), resolving
+    // display fields from the deduplicated `included` sideload. Unlike ProjectTracks (which reads
+    // `included` directly and so collapses duplicates), this preserves repeated occurrences — required
+    // for playlists, where the same track id can appear multiple times. A linkage whose track resource
+    // isn't sideloaded still yields the id (with blank display fields) so membership/dup counts stay
+    // complete.
+    private static IEnumerable<Track> ProjectTracksFromData(TidalCollectionResponse page)
+    {
+        var included = page.Included ?? [];
+        var (artistNames, albumTitles) = BuildLookups(included);
+        var trackResources = included
+            .Where(r => r.Type == "tracks" && r.Id is not null)
+            .GroupBy(r => r.Id!)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        foreach (var link in page.Data ?? [])
+        {
+            if (link.Type != "tracks" || link.Id is not { } id)
+                continue;
+
+            var addedAt = link.Meta?.AddedAt;
+
+            if (trackResources.TryGetValue(id, out var res) && res.Attributes is { } attrs)
+                yield return new Track(
+                    id,
+                    attrs.Title ?? "",
+                    ResolveName(res.Relationships?.Artists, artistNames),
+                    ResolveName(res.Relationships?.Albums, albumTitles),
+                    attrs.Isrc,
+                    addedAt);
+            else
+                yield return new Track(id, "", "", "", null, addedAt);
         }
     }
 
@@ -143,15 +232,12 @@ public sealed class TidalMusicProvider(HttpClient http, HttpClient writeHttp, st
         return (artistNames, albumTitles);
     }
 
-    private async Task WriteItemsInBatchesAsync(HttpMethod method, string playlistId,
-        IEnumerable<string> trackIds, CancellationToken ct)
+    private async Task SendItemBatchesAsync(HttpMethod method, string playlistId,
+        IEnumerable<TidalResourceIdentifier> items, CancellationToken ct)
     {
-        foreach (var batch in trackIds.Chunk(PlaylistWriteBatchSize))
+        foreach (var batch in items.Chunk(PlaylistWriteBatchSize))
         {
-            var payload = new TidalRelationshipData
-            {
-                Data = batch.Select(id => new TidalResourceIdentifier { Id = id, Type = "tracks" }).ToList()
-            };
+            var payload = new TidalRelationshipData { Data = batch.ToList() };
             var json = JsonSerializer.Serialize(payload, TidalApiJsonContext.Default.TidalRelationshipData);
 
             using var request = new HttpRequestMessage(method,
