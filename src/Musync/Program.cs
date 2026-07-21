@@ -234,6 +234,16 @@ using (var scope = host.Services.CreateScope())
                 """ALTER TABLE "JobRuns" ADD COLUMN "TracksMapped" INTEGER NOT NULL DEFAULT 0;""";
             addColumn.ExecuteNonQuery();
         }
+
+        using var isrcCheck = connection.CreateCommand();
+        isrcCheck.CommandText =
+            "SELECT COUNT(*) FROM pragma_table_info('TrackHistories') WHERE name = 'Isrc';";
+        if (Convert.ToInt64(isrcCheck.ExecuteScalar()) == 0)
+        {
+            using var addColumn = connection.CreateCommand();
+            addColumn.CommandText = """ALTER TABLE "TrackHistories" ADD COLUMN "Isrc" TEXT NULL;""";
+            addColumn.ExecuteNonQuery();
+        }
     }
     else
     {
@@ -270,6 +280,9 @@ spotifyCmd.Add(spotifyReconcile);
 
 var tidalQueueAlbums = new Command("queue-albums", "Sync saved albums to the queue playlist");
 tidalCmd.Add(tidalQueueAlbums);
+
+var tidalReconcile = new Command("reconcile-queue", "Remove duplicate tracks from the queue playlist");
+tidalCmd.Add(tidalReconcile);
 
 var spotifySourceOption = new Option<string>("--source") { Description = "Source provider to import from" }
     .AcceptOnlyFromAmong([.. ProviderKeys.All]);
@@ -510,30 +523,56 @@ static async Task<int> RunReconcileAsync(
     IServiceProvider services,
     CancellationToken ct)
 {
-    if (providerKey != ProviderKeys.Spotify)
-    {
-        await Console.Error.WriteLineAsync($"reconcile-queue is not supported for provider: {providerKey}");
-        return 1;
-    }
-
     await using var scope = services.CreateAsyncScope();
 
-    var (opts, optsError) = TryResolveSpotifyOptions(scope.ServiceProvider);
-    if (opts is null)
+    // Resolve the queue playlist per provider, mirroring RunQueueAlbumsAsync. Both providers expose
+    // QueuePlaylistId; the reconcile job itself is provider-agnostic (it works through ctx.Target).
+    string playlistId;
+    switch (providerKey)
     {
-        await Console.Error.WriteLineAsync(optsError);
+        case ProviderKeys.Spotify:
+            {
+                var (opts, optsError) = TryResolveSpotifyOptions(scope.ServiceProvider);
+                if (opts is null)
+                {
+                    await Console.Error.WriteLineAsync(optsError);
+                    return 1;
+                }
+
+                playlistId = opts.QueuePlaylistId;
+                break;
+            }
+        case ProviderKeys.Tidal:
+            {
+                var (opts, optsError) = TryResolveTidalOptions(scope.ServiceProvider);
+                if (opts is null)
+                {
+                    await Console.Error.WriteLineAsync(optsError);
+                    return 1;
+                }
+
+                playlistId = opts.QueuePlaylistId;
+                break;
+            }
+        default:
+            await Console.Error.WriteLineAsync($"reconcile-queue is not supported for provider: {providerKey}");
+            return 1;
+    }
+
+    if (string.IsNullOrEmpty(playlistId))
+    {
+        var section = char.ToUpperInvariant(providerKey[0]) + providerKey[1..];
+        await Console.Error.WriteLineAsync($"{section}:QueuePlaylistId is required for reconcile-queue.");
         return 1;
     }
 
-    if (string.IsNullOrEmpty(opts.QueuePlaylistId))
+    var (provider, providerError) = TryResolveProvider(scope.ServiceProvider, providerKey);
+    if (providerError is not null)
     {
-        await Console.Error.WriteLineAsync("Spotify:QueuePlaylistId is required for reconcile-queue.");
+        await Console.Error.WriteLineAsync(providerError);
         return 1;
     }
 
-    var playlistId = opts.QueuePlaylistId;
-
-    var provider = scope.ServiceProvider.GetKeyedService<IMusicProvider>(providerKey);
     if (provider is null)
     {
         await Console.Error.WriteLineAsync(

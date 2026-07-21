@@ -24,6 +24,10 @@ public sealed class TrackHistory
 
     [MaxLength(500)] public string AlbumName { get; set; } = "";
 
+    // The recording's ISRC when the provider surfaced one. Used for de-duplication so the same song
+    // under a different catalog id (another album edition) is recognised as already-queued.
+    [MaxLength(64)] public string? Isrc { get; set; }
+
     public DateTime AddedAt { get; set; }
     public DateTime? RemovedAt { get; set; }
 

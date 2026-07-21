@@ -8,6 +8,12 @@ namespace Musync.Infrastructure.Tidal.Models;
 
 public sealed class TidalCollectionResponse
 {
+    // The primary linkage array. For a …/relationships/items read this is the ordered, per-occurrence
+    // list of items — a track present twice appears twice here, whereas `included` (below) is
+    // deduplicated by (type,id) per the JSON:API spec and so cannot reveal duplicates.
+    [JsonPropertyName("data")]
+    public List<TidalResourceIdentifier>? Data { get; init; }
+
     [JsonPropertyName("included")]
     public List<TidalResource>? Included { get; init; }
 
@@ -67,6 +73,26 @@ public sealed class TidalResourceIdentifier
 
     [JsonPropertyName("type")]
     public string? Type { get; init; }
+
+    // Per-occurrence metadata on a playlist item linkage. `itemId` uniquely identifies one occurrence
+    // of a track in the playlist, so it's what a DELETE must target to remove a specific copy. Omitted
+    // when writing (WhenWritingNull) so add/remove payloads that don't set it stay `{"id","type"}`.
+    [JsonPropertyName("meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TidalResourceIdentifierMeta? Meta { get; init; }
+}
+
+public sealed class TidalResourceIdentifierMeta
+{
+    [JsonPropertyName("itemId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ItemId { get; init; }
+
+    // When the item was added to the playlist. Read-only; used to keep the earliest-added copy when
+    // de-duplicating. Omitted on write so it never bloats an add/remove payload.
+    [JsonPropertyName("addedAt")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? AddedAt { get; init; }
 }
 
 public sealed class TidalLinks
